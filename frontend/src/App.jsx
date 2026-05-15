@@ -632,14 +632,14 @@ export default function App() {
           title={ctxIsNode ? ctxData.label : ctxData.label}
           subtitle={ctxIsNode ? ctxData.type : `${ctxData.source_name} → ${ctxData.target_name}`}
           items={ctxIsNode ? [
-            { label: '+ Add Relationship', onClick: () => setShowAddRel(true) },
+            { label: '+ Rel', onClick: () => setShowAddRel(true) },
+            { label: '+ Tag', onClick: () => { setTaggingNode({ data: ctxData, x: contextMenu.x, y: contextMenu.y }); setContextMenu(null) } },
             { label: 'Edit', onClick: () => setEditingNode(ctxData) },
-            { label: 'Tag…', onClick: () => { setTaggingNode({ data: ctxData, x: contextMenu.x, y: contextMenu.y }); setContextMenu(null) } },
             { label: ctxIsHidden ? 'Unhide from graph' : 'Hide from graph', onClick: () => toggleHideNode(ctxData.id) },
             ...(multiSelectedNodeIds.length >= 2 ? [
               'divider',
-              { label: '⟺ Align Vertically', onClick: () => { handleAlignNodes('center-v'); setContextMenu(null) }},
-              { label: '⟺ Align Horizontally', onClick: () => { handleAlignNodes('center-h'); setContextMenu(null) }},
+              { label: '↔ Align V-Centers', onClick: () => { handleAlignNodes('center-v'); setContextMenu(null) }},
+              { label: '↕ Align H-Centers', onClick: () => { handleAlignNodes('center-h'); setContextMenu(null) }},
               ...(multiSelectedNodeIds.length >= 3 ? [
                 { label: '↕ Distribute Vertically', onClick: () => { handleAlignNodes('dist-v'); setContextMenu(null) }},
                 { label: '↔ Distribute Horizontally', onClick: () => { handleAlignNodes('dist-h'); setContextMenu(null) }},
