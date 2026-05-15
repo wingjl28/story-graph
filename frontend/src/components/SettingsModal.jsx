@@ -3,7 +3,7 @@ import TypeManager from './TypeManager'
 import RelTypeManager from './RelTypeManager'
 import TagManager from './TagManager'
 
-export default function SettingsModal({ nodeTypes, onUpdateTypes, onClose, onUpdateGraph }) {
+export default function SettingsModal({ nodeTypes, onUpdateTypes, onClose, onUpdateGraph, activeGraphId }) {
   const [tab, setTab] = useState('types')
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -17,9 +17,9 @@ export default function SettingsModal({ nodeTypes, onUpdateTypes, onClose, onUpd
           <button className="panel-close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body settings-modal-body">
-          {tab === 'types' && <TypeManager nodeTypes={nodeTypes} onUpdate={onUpdateTypes} onClose={onClose} embedded />}
+          {tab === 'types' && <TypeManager nodeTypes={nodeTypes} onUpdate={onUpdateTypes} onClose={onClose} embedded activeGraphId={activeGraphId} />}
           {tab === 'rels' && <RelTypeManager onClose={onClose} embedded onUpdate={onUpdateGraph} />}
-          {tab === 'tags' && <TagManager embedded onUpdate={onUpdateGraph} />}
+          {tab === 'tags' && <TagManager embedded onUpdate={onUpdateGraph} activeGraphId={activeGraphId} />}
         </div>
       </div>
     </div>

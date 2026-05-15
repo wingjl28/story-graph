@@ -37,6 +37,19 @@ export default function EdgePanel({ edgeData, onDelete, onClose, onSaved, existi
     }
   }
 
+  const handleToggleBidir = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      await api.toggleBidirectional(edgeData.rel_id)
+      onSaved?.()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const addKv = () => setKvPairs((p) => [...p, { k: '', v: '' }])
   const removeKv = (i) => setKvPairs((p) => p.filter((_, idx) => idx !== i))
   const updateKv = (i, field, value) =>
@@ -84,6 +97,32 @@ export default function EdgePanel({ edgeData, onDelete, onClose, onSaved, existi
         </div>
         <button className="panel-close" onClick={onClose}><Icon icon="carbon:close" width={18} /></button>
       </div>
+
+      {/* Action buttons moved to top */}
+      {!editing && (
+        <div className="panel-actions" style={{ borderBottom: '1px solid #2d3748', borderTop: 'none', marginBottom: 0 }}>
+          <button className="btn btn-secondary btn-sm" onClick={() => setEditing(true)}>
+            <Icon icon="carbon:edit" width={13} style={{ marginRight: 4 }} />Edit
+          </button>
+          <button className="btn btn-secondary btn-sm" onClick={handleSwap} disabled={saving} title="Swap direction">
+            {saving ? '…' : <><Icon icon="carbon:arrows-vertical" width={13} style={{ marginRight: 4 }} />Swap</>}
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handleToggleBidir}
+            disabled={saving}
+            title={edgeData.bidirectional ? 'Make uni-directional' : 'Make bi-directional'}
+          >
+            {saving ? '…' : edgeData.bidirectional
+              ? <><Icon icon="carbon:arrow-right" width={13} style={{ marginRight: 4 }} />Uni-dir</>
+              : <><Icon icon="carbon:arrows-horizontal" width={13} style={{ marginRight: 4 }} />Bi-dir</>
+            }
+          </button>
+          <button className="btn btn-danger btn-sm" style={{ marginLeft: 'auto' }} onClick={onDelete}>
+            <Icon icon="carbon:trash-can" width={13} style={{ marginRight: 4 }} />Delete
+          </button>
+        </div>
+      )}
 
       <div className="panel-body">
         {/* From / To */}
@@ -183,20 +222,6 @@ export default function EdgePanel({ edgeData, onDelete, onClose, onSaved, existi
       {error && !editing && (
         <div style={{ padding: '0 16px 10px', color: '#fc8181', fontSize: 12 }}>{error}</div>
       )}
-
-      <div className="panel-actions">
-        {!editing && (
-          <>
-            <button className="btn btn-secondary btn-sm" onClick={() => setEditing(true)}>Edit</button>
-            <button className="btn btn-secondary btn-sm" onClick={handleSwap} disabled={saving} title="Swap direction">
-              {saving ? '…' : <><Icon icon="carbon:arrows-vertical" width={13} style={{ marginRight: 4 }} />Swap</>}
-            </button>
-          </>
-        )}
-        <button className="btn btn-danger btn-sm" style={{ marginLeft: 'auto' }} onClick={onDelete}>
-          Delete
-        </button>
-      </div>
     </aside>
   )
 }

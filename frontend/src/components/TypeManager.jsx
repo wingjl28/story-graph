@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Icon } from '@iconify/react'
 import { api } from '../api'
 
-export default function TypeManager({ nodeTypes, onUpdate, onClose, embedded = false }) {
+export default function TypeManager({ nodeTypes, onUpdate, onClose, embedded = false, activeGraphId }) {
   const [editingId, setEditingId] = useState(null)
   const [showNew, setShowNew] = useState(false)
   const [error, setError] = useState(null)
@@ -32,6 +32,7 @@ export default function TypeManager({ nodeTypes, onUpdate, onClose, embedded = f
             <TypeForm
               key={t.id}
               initial={t}
+              activeGraphId={activeGraphId}
               onSave={async (data) => {
                 await api.updateNodeType(t.id, data)
                 await onUpdate()
@@ -48,6 +49,16 @@ export default function TypeManager({ nodeTypes, onUpdate, onClose, embedded = f
                   {t.is_date_type && (
                     <span style={{ fontSize: 10, color: '#a78bfa', background: '#2d1f5e', border: '1px solid #6366f1', borderRadius: 10, padding: '1px 6px' }}>date</span>
                   )}
+                  <span style={{
+                    fontSize: 10,
+                    color: t.scope === 'shared' ? '#68d391' : '#f6ad55',
+                    background: t.scope === 'shared' ? '#1a3a2a' : '#3a2a0a',
+                    border: `1px solid ${t.scope === 'shared' ? '#38a169' : '#d97706'}`,
+                    borderRadius: 10,
+                    padding: '1px 6px',
+                  }}>
+                    {t.scope === 'shared' ? 'Shared' : 'Story'}
+                  </span>
                 </div>
                 {t.description && <div className="type-item-desc">{t.description}</div>}
               </div>
@@ -62,6 +73,7 @@ export default function TypeManager({ nodeTypes, onUpdate, onClose, embedded = f
 
       {showNew ? (
         <TypeForm
+          activeGraphId={activeGraphId}
           onSave={async (data) => {
             await api.createNodeType(data)
             await onUpdate()
@@ -101,11 +113,13 @@ export default function TypeManager({ nodeTypes, onUpdate, onClose, embedded = f
   )
 }
 
-function TypeForm({ initial, onSave, onCancel }) {
+function TypeForm({ initial, onSave, onCancel, activeGraphId }) {
   const [name, setName] = useState(initial?.name || '')
   const [color, setColor] = useState(initial?.color || '#6366f1')
+  const [fontColor, setFontColor] = useState(initial?.font_color || '#ffffff')
   const [description, setDescription] = useState(initial?.description || '')
   const [isDateType, setIsDateType] = useState(initial?.is_date_type ?? false)
+  const [scope, setScope] = useState(initial?.scope || 'shared')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
@@ -115,7 +129,15 @@ function TypeForm({ initial, onSave, onCancel }) {
     setSaving(true)
     setError(null)
     try {
-      await onSave({ name: name.trim(), color, description: description.trim() || null, is_date_type: isDateType })
+      await onSave({
+        name: name.trim(),
+        color,
+        font_color: fontColor,
+        description: description.trim() || null,
+        is_date_type: isDateType,
+        scope,
+        graph_id: scope === 'story' ? (activeGraphId ?? null) : null,
+      })
     } catch (err) {
       setError(err.message)
       setSaving(false)
@@ -139,10 +161,17 @@ function TypeForm({ initial, onSave, onCancel }) {
             />
           </div>
           <div className="form-group" style={{ flex: '0 0 auto' }}>
-            <label className="form-label">Color</label>
+            <label className="form-label">BG Color</label>
             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
               <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
               <button type="button" className="btn-icon" onClick={() => setColor('#' + Math.floor(Math.random() * 0xFFFFFF).toString(16).padStart(6, '0'))} title="Random color"><Icon icon="carbon:shuffle" width={14} /></button>
+            </div>
+          </div>
+          <div className="form-group" style={{ flex: '0 0 auto' }}>
+            <label className="form-label">Font Color</label>
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <input type="color" value={fontColor} onChange={(e) => setFontColor(e.target.value)} />
+              <button type="button" className="btn-icon" onClick={() => setFontColor('#ffffff')} title="Reset to white"><Icon icon="carbon:reset" width={14} /></button>
             </div>
           </div>
         </div>
@@ -155,17 +184,31 @@ function TypeForm({ initial, onSave, onCancel }) {
             placeholder="Optional description"
           />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-          <input
-            type="checkbox"
-            id="type-is-date"
-            checked={isDateType}
-            onChange={(e) => setIsDateType(e.target.checked)}
-            style={{ accentColor: '#6366f1', width: 14, height: 14, cursor: 'pointer' }}
-          />
-          <label htmlFor="type-is-date" style={{ fontSize: 13, color: '#718096', cursor: 'pointer', userSelect: 'none' }}>
-            Date type — nodes of this type can have a date and appear on the timeline
-          </label>
+        <div style={{ display: 'flex', gap: 16, marginBottom: 10, alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="checkbox"
+              id="type-is-date"
+              checked={isDateType}
+              onChange={(e) => setIsDateType(e.target.checked)}
+              style={{ accentColor: '#6366f1', width: 14, height: 14, cursor: 'pointer' }}
+            />
+            <label htmlFor="type-is-date" style={{ fontSize: 13, color: '#718096', cursor: 'pointer', userSelect: 'none' }}>
+              Date type
+            </label>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <label style={{ fontSize: 13, color: '#718096' }}>Scope:</label>
+            <select
+              className="form-input"
+              style={{ width: 'auto', padding: '2px 6px', fontSize: 13 }}
+              value={scope}
+              onChange={(e) => setScope(e.target.value)}
+            >
+              <option value="shared">Shared (all stories)</option>
+              <option value="story">Story (this story only)</option>
+            </select>
+          </div>
         </div>
         {error && <div style={{ color: '#fc8181', fontSize: 12, marginBottom: 8 }}>{error}</div>}
         <div style={{ display: 'flex', gap: 6 }}>

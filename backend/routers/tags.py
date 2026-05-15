@@ -1,9 +1,14 @@
 from fastapi import APIRouter, HTTPException
-from typing import List
+from typing import List, Optional
 from ..database import get_db
 from ..models import Tag, TagCreate, TagUpdate
 
 router = APIRouter(prefix="/tags", tags=["tags"])
+
+_COUNT_JOIN = """
+    SELECT t.id, t.name, t.color, t.scope, t.graph_id, COUNT(nt.node_id) AS count
+    FROM tags t LEFT JOIN node_tags nt ON t.id = nt.tag_id
+"""
 
 
 def _row_to_tag(row) -> dict:
@@ -11,13 +16,15 @@ def _row_to_tag(row) -> dict:
 
 
 @router.get("", response_model=List[Tag])
-def list_tags():
+def list_tags(graph_id: Optional[int] = None):
     conn = get_db()
-    rows = conn.execute("""
-        SELECT t.id, t.name, t.color, COUNT(nt.node_id) AS count
-        FROM tags t LEFT JOIN node_tags nt ON t.id = nt.tag_id
-        GROUP BY t.id ORDER BY t.name
-    """).fetchall()
+    if graph_id is not None:
+        rows = conn.execute(
+            _COUNT_JOIN + " WHERE (t.scope = 'shared' OR t.graph_id = ?) GROUP BY t.id ORDER BY t.name",
+            (graph_id,),
+        ).fetchall()
+    else:
+        rows = conn.execute(_COUNT_JOIN + " GROUP BY t.id ORDER BY t.name").fetchall()
     conn.close()
     return [_row_to_tag(r) for r in rows]
 
@@ -26,11 +33,14 @@ def list_tags():
 def create_tag(data: TagCreate):
     conn = get_db()
     try:
-        cur = conn.execute("INSERT INTO tags (name, color) VALUES (?, ?)", (data.name.strip(), data.color))
+        cur = conn.execute(
+            "INSERT INTO tags (name, color, scope, graph_id) VALUES (?, ?, ?, ?)",
+            (data.name.strip(), data.color, data.scope, data.graph_id),
+        )
         tag_id = cur.lastrowid
         conn.commit()
         row = conn.execute(
-            "SELECT t.id, t.name, t.color, COUNT(nt.node_id) AS count FROM tags t LEFT JOIN node_tags nt ON t.id = nt.tag_id WHERE t.id = ? GROUP BY t.id",
+            _COUNT_JOIN + " WHERE t.id = ? GROUP BY t.id",
             (tag_id,)
         ).fetchone()
         return _row_to_tag(row)
@@ -54,7 +64,7 @@ def update_tag(tag_id: int, data: TagUpdate):
         conn.execute(f"UPDATE tags SET {set_clause} WHERE id = ?", [*raw.values(), tag_id])
         conn.commit()
         row = conn.execute(
-            "SELECT t.id, t.name, t.color, COUNT(nt.node_id) AS count FROM tags t LEFT JOIN node_tags nt ON t.id = nt.tag_id WHERE t.id = ? GROUP BY t.id",
+            _COUNT_JOIN + " WHERE t.id = ? GROUP BY t.id",
             (tag_id,)
         ).fetchone()
         if not row:

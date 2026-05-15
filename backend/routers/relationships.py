@@ -145,6 +145,38 @@ def update_relationship(rel_id: int, data: RelationshipUpdate):
         conn.close()
 
 
+@router.post("/{rel_id}/toggle-bidirectional")
+def toggle_bidirectional(rel_id: int):
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT * FROM relationships WHERE id = ?", (rel_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Relationship not found")
+        reverse = conn.execute(
+            "SELECT id FROM relationships WHERE source_id=? AND target_id=? AND label=?",
+            (row["target_id"], row["source_id"], row["label"]),
+        ).fetchone()
+        if reverse:
+            conn.execute("DELETE FROM relationships WHERE id=?", (reverse["id"],))
+            conn.commit()
+            return {"bidirectional": False}
+        else:
+            _ensure_rel_type(conn, row["label"])
+            conn.execute(
+                "INSERT INTO relationships (source_id, target_id, label, notes, metadata) VALUES (?, ?, ?, ?, ?)",
+                (row["target_id"], row["source_id"], row["label"], row["notes"], row["metadata"]),
+            )
+            conn.commit()
+            return {"bidirectional": True}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        conn.close()
+
+
 @router.post("/{rel_id}/swap", response_model=Relationship)
 def swap_relationship_direction(rel_id: int):
     conn = get_db()

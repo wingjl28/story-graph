@@ -4,14 +4,14 @@ import { api } from '../api'
 
 const randomColor = () => '#' + Math.floor(Math.random() * 0xFFFFFF).toString(16).padStart(6, '0')
 
-export default function TagManager({ embedded = false, onClose, onUpdate }) {
+export default function TagManager({ embedded = false, onClose, onUpdate, activeGraphId }) {
   const [tags, setTags] = useState([])
   const [showNew, setShowNew] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [error, setError] = useState(null)
 
-  const load = () => api.getTags().then(setTags).catch(e => setError(e.message))
-  useEffect(() => { load() }, [])
+  const load = () => api.getTags(activeGraphId).then(setTags).catch(e => setError(e.message))
+  useEffect(() => { load() }, [activeGraphId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDelete = async (tag) => {
     if (!window.confirm(`Delete tag "${tag.name}"?`)) return
@@ -24,13 +24,31 @@ export default function TagManager({ embedded = false, onClose, onUpdate }) {
       {error && <div style={{ color: '#fc8181', fontSize: 13, marginBottom: 12 }}>{error}</div>}
       <div className="type-list">
         {tags.map(t => editingId === t.id ? (
-          <TagForm key={t.id} initial={t} onSave={async (data) => { await api.updateTag(t.id, data); await load(); setEditingId(null); onUpdate?.() }} onCancel={() => setEditingId(null)} />
+          <TagForm
+            key={t.id}
+            initial={t}
+            activeGraphId={activeGraphId}
+            onSave={async (data) => { await api.updateTag(t.id, data); await load(); setEditingId(null); onUpdate?.() }}
+            onCancel={() => setEditingId(null)}
+          />
         ) : (
           <div key={t.id} className="type-item">
             <span className="type-color-swatch" style={{ background: t.color }} />
             <div style={{ flex: 1 }}>
-              <span className="type-item-name">{t.name}</span>
-              <span style={{ fontSize: 11, color: '#4a5568', marginLeft: 8 }}>{t.count} node{t.count !== 1 ? 's' : ''}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="type-item-name">{t.name}</span>
+                <span style={{ fontSize: 11, color: '#4a5568', marginLeft: 4 }}>{t.count} node{t.count !== 1 ? 's' : ''}</span>
+                <span style={{
+                  fontSize: 10,
+                  color: t.scope === 'shared' ? '#68d391' : '#f6ad55',
+                  background: t.scope === 'shared' ? '#1a3a2a' : '#3a2a0a',
+                  border: `1px solid ${t.scope === 'shared' ? '#38a169' : '#d97706'}`,
+                  borderRadius: 10,
+                  padding: '1px 6px',
+                }}>
+                  {t.scope === 'shared' ? 'Shared' : 'Story'}
+                </span>
+              </div>
             </div>
             <div className="type-item-actions">
               <button className="btn-icon" onClick={() => setEditingId(t.id)} title="Edit"><Icon icon="carbon:edit" width={14} /></button>
@@ -40,7 +58,11 @@ export default function TagManager({ embedded = false, onClose, onUpdate }) {
         ))}
       </div>
       {showNew ? (
-        <TagForm onSave={async (data) => { await api.createTag(data); await load(); setShowNew(false); onUpdate?.() }} onCancel={() => setShowNew(false)} />
+        <TagForm
+          activeGraphId={activeGraphId}
+          onSave={async (data) => { await api.createTag(data); await load(); setShowNew(false); onUpdate?.() }}
+          onCancel={() => setShowNew(false)}
+        />
       ) : (
         <button className="btn btn-secondary btn-sm" onClick={() => setShowNew(true)}>+ New Tag</button>
       )}
@@ -62,16 +84,25 @@ export default function TagManager({ embedded = false, onClose, onUpdate }) {
   )
 }
 
-function TagForm({ initial, onSave, onCancel }) {
+function TagForm({ initial, onSave, onCancel, activeGraphId }) {
   const [name, setName] = useState(initial?.name || '')
   const [color, setColor] = useState(initial?.color || '#a78bfa')
+  const [scope, setScope] = useState(initial?.scope || 'shared')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!name.trim()) return
     setSaving(true); setError(null)
-    try { await onSave({ name: name.trim(), color }) }
+    try {
+      await onSave({
+        name: name.trim(),
+        color,
+        scope,
+        graph_id: scope === 'story' ? (activeGraphId ?? null) : null,
+      })
+    }
     catch (err) { setError(err.message); setSaving(false) }
   }
   return (
@@ -90,6 +121,18 @@ function TagForm({ initial, onSave, onCancel }) {
               <button type="button" className="btn-icon" onClick={() => setColor(randomColor())} title="Random color"><Icon icon="carbon:shuffle" width={14} /></button>
             </div>
           </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <label style={{ fontSize: 13, color: '#718096' }}>Scope:</label>
+          <select
+            className="form-input"
+            style={{ width: 'auto', padding: '2px 6px', fontSize: 13 }}
+            value={scope}
+            onChange={(e) => setScope(e.target.value)}
+          >
+            <option value="shared">Shared (all stories)</option>
+            <option value="story">Story (this story only)</option>
+          </select>
         </div>
         {error && <div style={{ color: '#fc8181', fontSize: 12, marginBottom: 8 }}>{error}</div>}
         <div style={{ display: 'flex', gap: 6 }}>

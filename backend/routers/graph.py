@@ -22,7 +22,7 @@ def get_graph(graph_id: int = 1):
     nodes = conn.execute("""
         SELECT n.id, n.name, n.description, n.metadata, n.date, n.graph_id,
                nt.name AS type_name, nt.color AS type_color, nt.id AS type_id,
-               nt.is_date_type,
+               nt.is_date_type, nt.font_color,
                GROUP_CONCAT(t.id || ':' || t.name || ':' || t.color, '|') AS tags_raw
         FROM nodes n
         JOIN node_types nt ON n.type_id = nt.id
@@ -51,6 +51,7 @@ def get_graph(graph_id: int = 1):
                 "type": n["type_name"],
                 "type_id": n["type_id"],
                 "color": n["type_color"],
+                "font_color": n["font_color"],
                 "description": n["description"],
                 "metadata": json.loads(n["metadata"] or "{}"),
                 "date": n["date"],

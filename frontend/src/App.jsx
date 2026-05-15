@@ -125,21 +125,21 @@ export default function App() {
     }
   }, [activeGraphId])
 
-  const loadNodeTypes = useCallback(async () => {
+  const loadNodeTypes = useCallback(async (gid) => {
     try {
-      setNodeTypes(await api.getNodeTypes())
+      setNodeTypes(await api.getNodeTypes(gid ?? activeGraphId))
     } catch (e) {
       setError(e.message)
     }
-  }, [])
+  }, [activeGraphId])
 
-  const loadTags = useCallback(async () => {
+  const loadTags = useCallback(async (gid) => {
     try {
-      setAllTags(await api.getTags())
+      setAllTags(await api.getTags(gid ?? activeGraphId))
     } catch (e) {
       setError(e.message)
     }
-  }, [])
+  }, [activeGraphId])
 
   useEffect(() => {
     loadGraph()
@@ -259,6 +259,7 @@ export default function App() {
   const unhideAllTagNames = useCallback(() => setHiddenTagNames(new Set()), [])
 
   const handleSwitchGraph = useCallback(async (gid) => {
+    graphRef.current?.resetGraph()
     setActiveGraphId(gid)
     setSelected(null)
     setNodeRelationships([])
@@ -268,11 +269,16 @@ export default function App() {
     setHiddenTagNames(new Set())
     setFilters([])
     try {
-      setGraphData(await api.getGraph(gid))
+      const [graphData] = await Promise.all([
+        api.getGraph(gid),
+        loadNodeTypes(gid),
+        loadTags(gid),
+      ])
+      setGraphData(graphData)
     } catch (e) {
       setError(e.message)
     }
-  }, [])
+  }, [loadNodeTypes, loadTags])
 
   const handleNewGraph = useCallback(async () => {
     const title = window.prompt('New story graph name:')
@@ -609,7 +615,7 @@ export default function App() {
       )}
 
       {showSettings && (
-        <SettingsModal nodeTypes={nodeTypes} onUpdateTypes={loadNodeTypes} onClose={() => setShowSettings(false)} onUpdateGraph={loadGraph} />
+        <SettingsModal nodeTypes={nodeTypes} onUpdateTypes={loadNodeTypes} onClose={() => setShowSettings(false)} onUpdateGraph={loadGraph} activeGraphId={activeGraphId} />
       )}
 
       {contextMenu && (
@@ -623,6 +629,15 @@ export default function App() {
             { label: 'Edit', onClick: () => setEditingNode(ctxData) },
             { label: 'Tag…', onClick: () => { setTaggingNode({ data: ctxData, x: contextMenu.x, y: contextMenu.y }); setContextMenu(null) } },
             { label: ctxIsHidden ? 'Unhide from graph' : 'Hide from graph', onClick: () => toggleHideNode(ctxData.id) },
+            ...(multiSelectedNodeIds.length >= 2 ? [
+              'divider',
+              { label: '⟺ Align V-Centers', onClick: () => { handleAlignNodes('center-v'); setContextMenu(null) }},
+              { label: '⟺ Align H-Centers', onClick: () => { handleAlignNodes('center-h'); setContextMenu(null) }},
+              ...(multiSelectedNodeIds.length >= 3 ? [
+                { label: '↕ Distribute Vertically', onClick: () => { handleAlignNodes('dist-v'); setContextMenu(null) }},
+                { label: '↔ Distribute Horizontally', onClick: () => { handleAlignNodes('dist-h'); setContextMenu(null) }},
+              ] : []),
+            ] : []),
             'divider',
             { label: 'Delete', onClick: handleDeleteNode, danger: true },
           ] : [

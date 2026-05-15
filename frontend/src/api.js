@@ -19,7 +19,7 @@ const del = (url) => req(url, { method: 'DELETE' })
 
 export const api = {
   // Node Types
-  getNodeTypes: () => get('/node-types'),
+  getNodeTypes: (graphId) => graphId != null ? get(`/node-types?graph_id=${graphId}`) : get('/node-types'),
   createNodeType: (data) => post('/node-types', data),
   updateNodeType: (id, data) => put(`/node-types/${id}`, data),
   deleteNodeType: (id) => del(`/node-types/${id}`),
@@ -37,13 +37,14 @@ export const api = {
   updateRelationship: (id, data) => put(`/relationships/${id}`, data),
   deleteRelationship: (id) => del(`/relationships/${id}`),
   swapRelationship: (id) => post(`/relationships/${id}/swap`, {}),
+  toggleBidirectional: (id) => post(`/relationships/${id}/toggle-bidirectional`, {}),
 
   // Relationship Types
   getRelTypes: () => get('/rel-types'),
   updateRelType: (label, data) => put(`/rel-types/${encodeURIComponent(label)}`, data),
 
   // Tags
-  getTags: () => get('/tags'),
+  getTags: (graphId) => graphId != null ? get(`/tags?graph_id=${graphId}`) : get('/tags'),
   createTag: (data) => post('/tags', data),
   updateTag: (id, data) => put(`/tags/${id}`, data),
   deleteTag: (id) => del(`/tags/${id}`),

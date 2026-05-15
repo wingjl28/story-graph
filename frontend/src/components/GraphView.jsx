@@ -12,6 +12,7 @@ const LAYOUT_OPTS = {
 
 const buildNodeData = (data) => ({
   ...data,
+  fontColor: data.font_color || '#ffffff',
   cyLabel: data.tags?.length
     ? `${data.label}\n${data.tags.map(t => `#${t.name}`).join(' ')}`
     : data.label,
@@ -23,7 +24,7 @@ const CY_STYLE = [
     style: {
       'background-color': 'data(color)',
       'label': 'data(cyLabel)',
-      'color': '#ffffff',
+      'color': 'data(fontColor)',
       'text-valign': 'center',
       'text-halign': 'center',
       'font-size': '12px',
@@ -158,6 +159,7 @@ const GraphView = forwardRef(function GraphView(
   useEffect(() => { onBoxSelectDoneRef.current = onBoxSelectDone }, [onBoxSelectDone])
 
   useImperativeHandle(ref, () => ({
+    resetGraph: () => cy.current?.elements().remove(),
     fitGraph: () => cy.current?.fit(undefined, 50),
     relayout: () => {
       if (!cy.current) return

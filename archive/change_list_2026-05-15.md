@@ -65,3 +65,29 @@
 1. Align & Spacing for multi-selected nodes:
     + Align V-Centers, Align H-Centers, Distribute Vertically, Distribute Horizontally
     + Available in MultiSelectPanel and background right-click context menu
+
+## Bugs
+### Round 4
+1. Node positioning resets when switching between stories — fixed by adding `resetGraph()` to GraphView imperative handle and calling it at the top of `handleSwitchGraph` before fetching new graph data; positions are now restored from localStorage on every graph load
+
+## Enhancements
+### Round 4
+1. Classify Types and Tags as "Shared" or "Story":
+    + Shared types/tags are available in all stories (scope = 'shared')
+    + Story types/tags are local to one story (scope = 'story', graph_id set)
+    + Scope badge shown on each type/tag item in Settings
+    + Scope selector (dropdown) added to TypeForm and TagForm
+    + API GET /node-types and /tags accept optional graph_id param; return shared + story-scoped items
+    + Types and Tags are reloaded when switching graphs
+2. Font color option for Node Types:
+    + New "Font Color" picker added to TypeForm (next to BG Color)
+    + Reset-to-white button included
+    + font_color stored in node_types table and passed through graph API
+    + Cytoscape node labels use data(fontColor) for rendering
+3. Allow relationships to be toggled between uni- and bi-directional in EdgePanel:
+    + New "Bi-dir" / "Uni-dir" toggle button in EdgePanel action row
+    + POST /api/relationships/{rel_id}/toggle-bidirectional endpoint: adds reverse rel if none exists, deletes it if found
+4. Move EdgePanel edit/swap/delete buttons to the top of the panel (above From/To and body content)
+5. Add Align functionality to node right-click context menu when 2+ nodes are selected:
+    + Align V-Centers, Align H-Centers (always shown when ≥ 2 selected)
+    + Distribute Vertically, Distribute Horizontally (shown when ≥ 3 selected)

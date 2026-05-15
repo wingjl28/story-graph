@@ -26,38 +26,53 @@ class NodeTag(BaseModel):
 class TagCreate(BaseModel):
     name: str
     color: str = '#a78bfa'
+    scope: str = 'shared'
+    graph_id: Optional[int] = None
 
 class TagUpdate(BaseModel):
     name: Optional[str] = None
     color: Optional[str] = None
+    scope: Optional[str] = None
+    graph_id: Optional[int] = None
 
 class Tag(BaseModel):
     id: int
     name: str
     color: str
+    scope: str
+    graph_id: Optional[int]
     count: int
 
 
 class NodeTypeCreate(BaseModel):
     name: str
     color: str = "#6366f1"
+    font_color: Optional[str] = None
     description: Optional[str] = None
     is_date_type: bool = False
+    scope: str = 'shared'
+    graph_id: Optional[int] = None
 
 
 class NodeTypeUpdate(BaseModel):
     name: Optional[str] = None
     color: Optional[str] = None
+    font_color: Optional[str] = None
     description: Optional[str] = None
     is_date_type: Optional[bool] = None
+    scope: Optional[str] = None
+    graph_id: Optional[int] = None
 
 
 class NodeType(BaseModel):
     id: int
     name: str
     color: str
+    font_color: Optional[str]
     description: Optional[str]
     is_date_type: bool
+    scope: str
+    graph_id: Optional[int]
     created_at: datetime
 
 
