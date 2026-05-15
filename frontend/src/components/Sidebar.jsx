@@ -52,6 +52,8 @@ export default function Sidebar({
   activeGraphId,
   onSwitchGraph,
   onNewGraph,
+  onRenameGraph,
+  onDeleteGraph,
 }) {
   const [collapsed, setCollapsed] = useState({ filter: false, nodes: false, rels: false, types: false, tags: false })
   const [sort, setSort] = useState({ nodes: 'alpha', rels: 'alpha', types: 'alpha', tags: 'alpha' })
@@ -116,6 +118,17 @@ export default function Sidebar({
               <option key={g.id} value={g.id}>{g.title}</option>
             ))}
           </select>
+          <button className="sidebar-icon-btn" onClick={() => onRenameGraph?.(activeGraphId)} title="Rename story">
+            <Icon icon="carbon:edit" width={14} />
+          </button>
+          <button
+            className="sidebar-icon-btn"
+            onClick={() => onDeleteGraph?.(activeGraphId)}
+            title="Delete story"
+            disabled={storyGraphs.length <= 1}
+          >
+            <Icon icon="carbon:trash-can" width={14} />
+          </button>
           <button className="sidebar-icon-btn" onClick={onNewGraph} title="New story graph">
             <Icon icon="carbon:add" width={15} />
           </button>

@@ -4,11 +4,23 @@ import { api } from '../api'
 
 const randomColor = () => '#' + Math.floor(Math.random() * 0xFFFFFF).toString(16).padStart(6, '0')
 
-export default function AddNodeModal({ nodeTypes, allTags, initialData, existingMetaKeys, onSave, onClose, onTagCreated, graphId = 1 }) {
+export default function AddNodeModal({
+  nodeTypes: propNodeTypes,
+  allTags,
+  initialData,
+  existingMetaKeys,
+  existingRelLabels,
+  nodes,
+  onSave,
+  onClose,
+  onTagCreated,
+  onTypeCreated,
+  graphId = 1,
+}) {
   const isEditing = !!initialData?.id
   const [name, setName] = useState(initialData?.label || '')
   const [typeId, setTypeId] = useState(
-    initialData?.type_id ? String(initialData.type_id) : (nodeTypes[0]?.id ? String(nodeTypes[0].id) : ''),
+    initialData?.type_id ? String(initialData.type_id) : (propNodeTypes[0]?.id ? String(propNodeTypes[0].id) : ''),
   )
   const [description, setDescription] = useState(initialData?.description || '')
   const [date, setDate] = useState(initialData?.date || '')
@@ -19,10 +31,24 @@ export default function AddNodeModal({ nodeTypes, allTags, initialData, existing
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
-  // Inline new tag state
+  // Local node types (augmented by inline creations)
+  const [extraTypes, setExtraTypes] = useState([])
+  const nodeTypes = [...propNodeTypes, ...extraTypes]
+
+  // Inline new tag
+  const [showNewTag, setShowNewTag] = useState(false)
   const [newTagName, setNewTagName] = useState('')
   const [newTagColor, setNewTagColor] = useState('#a78bfa')
   const [creatingTag, setCreatingTag] = useState(false)
+
+  // Inline new type
+  const [showNewType, setShowNewType] = useState(false)
+  const [newTypeName, setNewTypeName] = useState('')
+  const [newTypeColor, setNewTypeColor] = useState('#6366f1')
+  const [creatingType, setCreatingType] = useState(false)
+
+  // Pending relationships (only used when creating, not editing)
+  const [pendingRels, setPendingRels] = useState([])
 
   // Drag state
   const [pos, setPos] = useState(null)
@@ -42,7 +68,7 @@ export default function AddNodeModal({ nodeTypes, allTags, initialData, existing
 
   useEffect(() => {
     if (!typeId && nodeTypes.length > 0) setTypeId(String(nodeTypes[0].id))
-  }, [nodeTypes]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [propNodeTypes]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const addKv = () => setKvPairs((p) => [...p, { k: '', v: '' }])
   const removeKv = (i) => setKvPairs((p) => p.filter((_, idx) => idx !== i))
@@ -60,6 +86,7 @@ export default function AddNodeModal({ nodeTypes, allTags, initialData, existing
       setTagIds(prev => [...prev, newTag.id])
       setNewTagName('')
       setNewTagColor('#a78bfa')
+      setShowNewTag(false)
       onTagCreated?.(newTag)
     } catch (err) {
       setError(err.message)
@@ -67,6 +94,29 @@ export default function AddNodeModal({ nodeTypes, allTags, initialData, existing
       setCreatingTag(false)
     }
   }
+
+  const handleCreateType = async () => {
+    if (!newTypeName.trim()) return
+    setCreatingType(true)
+    try {
+      const newType = await api.createNodeType({ name: newTypeName.trim(), color: newTypeColor })
+      setExtraTypes(prev => [...prev, newType])
+      setTypeId(String(newType.id))
+      setNewTypeName('')
+      setShowNewType(false)
+      onTypeCreated?.()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setCreatingType(false)
+    }
+  }
+
+  const addPendingRel = () =>
+    setPendingRels(p => [...p, { id: Date.now(), label: '', direction: 'TO', targetId: '' }])
+  const removePendingRel = (id) => setPendingRels(p => p.filter(r => r.id !== id))
+  const updatePendingRel = (id, field, value) =>
+    setPendingRels(p => p.map(r => r.id === id ? { ...r, [field]: value } : r))
 
   const buildPayload = () => {
     const metadata = {}
@@ -94,6 +144,15 @@ export default function AddNodeModal({ nodeTypes, allTags, initialData, existing
         await api.updateNode(initialData.id, buildPayload())
       } else {
         createdNode = await api.createNode(buildPayload())
+        // Create any pending relationships
+        for (const rel of pendingRels) {
+          if (!rel.label.trim() || !rel.targetId) continue
+          const srcId = rel.direction === 'TO' ? createdNode.id : parseInt(rel.targetId)
+          const tgtId = rel.direction === 'TO' ? parseInt(rel.targetId) : createdNode.id
+          try {
+            await api.createRelationship({ source_id: srcId, target_id: tgtId, label: rel.label.trim() })
+          } catch { /* skip duplicate */ }
+        }
       }
       await onSave(keepOpen, createdNode)
       if (keepOpen) {
@@ -102,6 +161,7 @@ export default function AddNodeModal({ nodeTypes, allTags, initialData, existing
         setDate('')
         setTagIds([])
         setKvPairs([])
+        setPendingRels([])
         setError(null)
         document.getElementById('add-node-name')?.focus()
       }
@@ -112,6 +172,7 @@ export default function AddNodeModal({ nodeTypes, allTags, initialData, existing
     }
   }
 
+  const otherNodes = (nodes || []).filter(n => !isEditing || String(n.id) !== String(initialData?.id))
   const modalStyle = pos
     ? { position: 'fixed', top: pos.y, left: pos.x, transform: 'none' }
     : {}
@@ -140,24 +201,58 @@ export default function AddNodeModal({ nodeTypes, allTags, initialData, existing
             />
           </div>
 
+          {/* Type with inline creation */}
           <div className="form-group">
-            <label className="form-label">Type *</label>
-            <select
-              className="form-select"
-              value={typeId}
-              onChange={(e) => setTypeId(e.target.value)}
-              required
-            >
-              {nodeTypes.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+              <label className="form-label" style={{ margin: 0 }}>Type *</label>
+              <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '2px 8px' }}
+                onClick={() => setShowNewType(v => !v)}>
+                {showNewType ? 'Cancel' : '+ New Type'}
+              </button>
+            </div>
+            {showNewType ? (
+              <div style={{ background: '#0f1117', border: '1px solid #2d3748', borderRadius: 6, padding: 10, marginBottom: 6 }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input
+                    className="form-input"
+                    placeholder="Type name…"
+                    value={newTypeName}
+                    onChange={e => setNewTypeName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCreateType() } }}
+                    autoFocus
+                    style={{ flex: 1 }}
+                  />
+                  <input type="color" value={newTypeColor} onChange={e => setNewTypeColor(e.target.value)}
+                    style={{ width: 32, height: 32, padding: 2, border: '1px solid #4a5568', borderRadius: 4, cursor: 'pointer', background: 'none' }} />
+                  <button type="button" className="btn-icon" onClick={() => setNewTypeColor(randomColor())} title="Random color">
+                    <Icon icon="carbon:shuffle" width={14} />
+                  </button>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={handleCreateType}
+                    disabled={creatingType || !newTypeName.trim()}>
+                    {creatingType ? '…' : 'Create'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <select className="form-select" value={typeId} onChange={(e) => setTypeId(e.target.value)} required>
+                {nodeTypes.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            )}
           </div>
 
+          {/* Tags with collapsible new-tag form */}
           <div className="form-group">
-            <label className="form-label">Tags</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+              <label className="form-label" style={{ margin: 0 }}>Tags</label>
+              <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '2px 8px' }}
+                onClick={() => setShowNewTag(v => !v)}>
+                {showNewTag ? 'Cancel' : '+ New Tag'}
+              </button>
+            </div>
             {allTags && allTags.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: showNewTag ? 8 : 0 }}>
                 {allTags.map(t => {
                   const active = tagIds.includes(t.id)
                   return (
@@ -173,24 +268,28 @@ export default function AddNodeModal({ nodeTypes, allTags, initialData, existing
                 })}
               </div>
             )}
-            <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-              <input
-                className="form-input"
-                placeholder="New tag name…"
-                value={newTagName}
-                onChange={e => setNewTagName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCreateTag() } }}
-                style={{ flex: 1 }}
-              />
-              <input type="color" value={newTagColor} onChange={e => setNewTagColor(e.target.value)}
-                style={{ width: 32, height: 32, padding: 2, border: '1px solid #4a5568', borderRadius: 4, cursor: 'pointer', background: 'none' }} />
-              <button type="button" className="btn-icon" onClick={() => setNewTagColor(randomColor())} title="Random color">
-                <Icon icon="carbon:shuffle" width={14} />
-              </button>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={handleCreateTag} disabled={creatingTag || !newTagName.trim()}>
-                {creatingTag ? '…' : <Icon icon="carbon:add" width={14} />}
-              </button>
-            </div>
+            {showNewTag && (
+              <div style={{ display: 'flex', gap: 5, alignItems: 'center', marginTop: 4 }}>
+                <input
+                  className="form-input"
+                  placeholder="New tag name…"
+                  value={newTagName}
+                  onChange={e => setNewTagName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCreateTag() } }}
+                  autoFocus
+                  style={{ flex: 1 }}
+                />
+                <input type="color" value={newTagColor} onChange={e => setNewTagColor(e.target.value)}
+                  style={{ width: 32, height: 32, padding: 2, border: '1px solid #4a5568', borderRadius: 4, cursor: 'pointer', background: 'none' }} />
+                <button type="button" className="btn-icon" onClick={() => setNewTagColor(randomColor())} title="Random color">
+                  <Icon icon="carbon:shuffle" width={14} />
+                </button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={handleCreateTag}
+                  disabled={creatingTag || !newTagName.trim()}>
+                  {creatingTag ? '…' : <Icon icon="carbon:add" width={14} />}
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="form-group">
@@ -213,6 +312,56 @@ export default function AddNodeModal({ nodeTypes, allTags, initialData, existing
                 onChange={(e) => setDate(e.target.value)}
                 placeholder="e.g. 2024-01-15, Year 342, Age of Fire…"
               />
+            </div>
+          )}
+
+          {/* Relationships (create-only) */}
+          {!isEditing && (
+            <div className="form-group">
+              <label className="form-label">Relationships</label>
+              {pendingRels.length > 0 && (
+                <div className="kv-list" style={{ marginBottom: 8 }}>
+                  {pendingRels.map(rel => (
+                    <div key={rel.id} className="kv-row" style={{ alignItems: 'center', gap: 4 }}>
+                      <input
+                        className="form-input"
+                        placeholder="Label…"
+                        list="node-rel-label-suggestions"
+                        value={rel.label}
+                        onChange={e => updatePendingRel(rel.id, 'label', e.target.value)}
+                        style={{ flex: 2 }}
+                      />
+                      <select
+                        className="form-select"
+                        value={rel.direction}
+                        onChange={e => updatePendingRel(rel.id, 'direction', e.target.value)}
+                        style={{ flex: '0 0 70px', padding: '8px 4px' }}
+                      >
+                        <option value="TO">→ TO</option>
+                        <option value="FROM">← FROM</option>
+                      </select>
+                      <select
+                        className="form-select"
+                        value={rel.targetId}
+                        onChange={e => updatePendingRel(rel.id, 'targetId', e.target.value)}
+                        style={{ flex: 3 }}
+                      >
+                        <option value="">Select node…</option>
+                        {otherNodes.map(n => (
+                          <option key={n.id} value={n.id}>{n.label} ({n.type})</option>
+                        ))}
+                      </select>
+                      <button type="button" className="kv-remove" onClick={() => removePendingRel(rel.id)}>
+                        <Icon icon="carbon:close" width={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <datalist id="node-rel-label-suggestions">
+                {(existingRelLabels || []).map(l => <option key={l} value={l} />)}
+              </datalist>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={addPendingRel}>+ Add Relationship</button>
             </div>
           )}
 

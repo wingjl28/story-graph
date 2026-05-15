@@ -17,6 +17,10 @@ export default function AddRelationshipModal({ nodes, sourceId, sourceIds, exist
   const [error, setError] = useState(null)
   const [sourceSearch, setSourceSearch] = useState('')
   const [targetSearch, setTargetSearch] = useState('')
+  const [sourceSort, setSourceSort] = useState('alpha')
+  const [targetSort, setTargetSort] = useState('alpha')
+  const [sourceTypeFilter, setSourceTypeFilter] = useState(new Set())
+  const [targetTypeFilter, setTargetTypeFilter] = useState(new Set())
   const [pos, setPos] = useState(null)
   const modalRef = useRef(null)
 
@@ -39,15 +43,50 @@ export default function AddRelationshipModal({ nodes, sourceId, sourceIds, exist
 
   const nodeMap = useMemo(() => Object.fromEntries(nodes.map((n) => [String(n.id), n])), [nodes])
 
+  // Unique types from all nodes
+  const uniqueTypes = useMemo(() => {
+    const map = new Map()
+    nodes.forEach(n => { if (!map.has(n.type)) map.set(n.type, { type: n.type, color: n.color }) })
+    return [...map.values()].sort((a, b) => a.type.localeCompare(b.type))
+  }, [nodes])
+
   const filteredSources = useMemo(() => {
     const set = new Set(sources.map(String))
-    return nodes.filter((n) => !set.has(String(n.id)) && (!sourceSearch || n.label.toLowerCase().includes(sourceSearch.toLowerCase())))
-  }, [nodes, sources, sourceSearch])
+    return nodes.filter(n => {
+      if (set.has(String(n.id))) return false
+      if (sourceTypeFilter.size > 0 && !sourceTypeFilter.has(n.type)) return false
+      if (sourceSearch && !n.label.toLowerCase().includes(sourceSearch.toLowerCase())) return false
+      return true
+    })
+  }, [nodes, sources, sourceSearch, sourceTypeFilter])
 
   const filteredTargets = useMemo(() => {
     const set = new Set(targets.map(String))
-    return nodes.filter((n) => !set.has(String(n.id)) && (!targetSearch || n.label.toLowerCase().includes(targetSearch.toLowerCase())))
-  }, [nodes, targets, targetSearch])
+    return nodes.filter(n => {
+      if (set.has(String(n.id))) return false
+      if (targetTypeFilter.size > 0 && !targetTypeFilter.has(n.type)) return false
+      if (targetSearch && !n.label.toLowerCase().includes(targetSearch.toLowerCase())) return false
+      return true
+    })
+  }, [nodes, targets, targetSearch, targetTypeFilter])
+
+  const sortNodes = (arr, sortMode) => {
+    const sorted = [...arr]
+    if (sortMode === 'alpha') sorted.sort((a, b) => a.label.localeCompare(b.label))
+    else sorted.sort((a, b) => a.type.localeCompare(b.type) || a.label.localeCompare(b.label))
+    return sorted
+  }
+
+  const sortedSources = useMemo(() => sortNodes(filteredSources, sourceSort), [filteredSources, sourceSort])
+  const sortedTargets = useMemo(() => sortNodes(filteredTargets, targetSort), [filteredTargets, targetSort])
+
+  const toggleTypeFilter = (filterSet, setFilter, type) => {
+    setFilter(prev => {
+      const next = new Set(prev)
+      next.has(type) ? next.delete(type) : next.add(type)
+      return next
+    })
+  }
 
   const addSource = (id) => { setSources((p) => [...p, id]) }
   const removeSource = (id) => setSources((p) => p.filter((s) => String(s) !== String(id)))
@@ -59,6 +98,8 @@ export default function AddRelationshipModal({ nodes, sourceId, sourceIds, exist
     setTargets(sources)
     setSourceSearch('')
     setTargetSearch('')
+    setSourceTypeFilter(new Set())
+    setTargetTypeFilter(new Set())
   }
 
   const resetForm = () => {
@@ -67,6 +108,7 @@ export default function AddRelationshipModal({ nodes, sourceId, sourceIds, exist
     setKvPairs([])
     setTargets([])
     setTargetSearch('')
+    setTargetTypeFilter(new Set())
     setError(null)
   }
 
@@ -79,7 +121,6 @@ export default function AddRelationshipModal({ nodes, sourceId, sourceIds, exist
       if (k.trim()) metadata[k.trim()] = v
     }
 
-    // Build unique (source, target) pairs
     const seen = new Set()
     const pairs = []
     for (const s of sources) {
@@ -147,7 +188,20 @@ export default function AddRelationshipModal({ nodes, sourceId, sourceIds, exist
             <div className="form-group">
               <label className="form-label">From (source) *</label>
               <ChipList items={sources.map((id) => nodeMap[String(id)]).filter(Boolean)} onRemove={removeSource} />
-              <NodePicker nodes={filteredSources} search={sourceSearch} onSearch={setSourceSearch} onSelect={addSource} placeholder="Search and add source nodes…" />
+              <TypeFilterChips
+                types={uniqueTypes}
+                active={sourceTypeFilter}
+                onToggle={type => toggleTypeFilter(sourceTypeFilter, setSourceTypeFilter, type)}
+              />
+              <NodePicker
+                nodes={sortedSources}
+                search={sourceSearch}
+                onSearch={setSourceSearch}
+                onSelect={addSource}
+                sort={sourceSort}
+                onSort={setSourceSort}
+                placeholder="Search and add source nodes…"
+              />
             </div>
 
             {/* Swap */}
@@ -193,7 +247,20 @@ export default function AddRelationshipModal({ nodes, sourceId, sourceIds, exist
             <div className="form-group">
               <label className="form-label">To (target) *</label>
               <ChipList items={targets.map((id) => nodeMap[String(id)]).filter(Boolean)} onRemove={removeTarget} />
-              <NodePicker nodes={filteredTargets} search={targetSearch} onSearch={setTargetSearch} onSelect={addTarget} placeholder="Search and add target nodes…" />
+              <TypeFilterChips
+                types={uniqueTypes}
+                active={targetTypeFilter}
+                onToggle={type => toggleTypeFilter(targetTypeFilter, setTargetTypeFilter, type)}
+              />
+              <NodePicker
+                nodes={sortedTargets}
+                search={targetSearch}
+                onSearch={setTargetSearch}
+                onSelect={addTarget}
+                sort={targetSort}
+                onSort={setTargetSort}
+                placeholder="Search and add target nodes…"
+              />
             </div>
 
             {/* Notes */}
@@ -228,7 +295,9 @@ export default function AddRelationshipModal({ nodes, sourceId, sourceIds, exist
                         value={pair.v}
                         onChange={(e) => updateKv(i, 'v', e.target.value)}
                       />
-                      <button type="button" className="kv-remove" onClick={() => removeKv(i)}>×</button>
+                      <button type="button" className="kv-remove" onClick={() => removeKv(i)}>
+                        <Icon icon="carbon:close" width={14} />
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -265,6 +334,29 @@ export default function AddRelationshipModal({ nodes, sourceId, sourceIds, exist
   )
 }
 
+function TypeFilterChips({ types, active, onToggle }) {
+  if (types.length === 0) return null
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
+      {types.map(t => {
+        const isActive = active.has(t.type)
+        return (
+          <button
+            key={t.type}
+            type="button"
+            className={`filter-type-pill${isActive ? '' : ' hidden-type'}`}
+            style={{ borderColor: isActive ? t.color : undefined, fontSize: 11, padding: '2px 7px 2px 5px' }}
+            onClick={() => onToggle(t.type)}
+          >
+            <span className="type-dot" style={{ background: isActive ? t.color : '#4a5568' }} />
+            {t.type}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function ChipList({ items, onRemove }) {
   if (!items.length) return null
   return (
@@ -280,16 +372,27 @@ function ChipList({ items, onRemove }) {
   )
 }
 
-function NodePicker({ nodes, search, onSearch, onSelect, placeholder }) {
+function NodePicker({ nodes, search, onSearch, onSelect, sort, onSort, placeholder }) {
   return (
     <div>
-      <input
-        className="form-input"
-        placeholder={placeholder}
-        value={search}
-        onChange={(e) => onSearch(e.target.value)}
-        style={{ marginBottom: 6 }}
-      />
+      <div style={{ display: 'flex', gap: 4, marginBottom: 6, alignItems: 'center' }}>
+        <input
+          className="form-input"
+          placeholder={placeholder}
+          value={search}
+          onChange={(e) => onSearch(e.target.value)}
+          style={{ flex: 1 }}
+        />
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          style={{ flexShrink: 0, fontSize: 11, padding: '4px 8px' }}
+          onClick={() => onSort(s => s === 'alpha' ? 'type' : 'alpha')}
+          title={sort === 'alpha' ? 'Sort by type' : 'Sort A–Z'}
+        >
+          <Icon icon={sort === 'alpha' ? 'carbon:sort-ascending' : 'carbon:category'} width={14} />
+        </button>
+      </div>
       <div style={{ background: '#0f1117', border: '1px solid #2d3748', borderRadius: 6, maxHeight: 120, overflowY: 'auto' }}>
         {nodes.length === 0 && (
           <div style={{ padding: '8px 12px', color: '#4a5568', fontSize: 13 }}>No nodes found</div>

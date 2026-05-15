@@ -1399,3 +1399,11 @@ input[type='color'] {
 }
 .quick-tag-item.active { background: #1e2535; }
 .quick-tag-item.active .sb-chip-label { font-weight: 500; }
+
+/* ── Alignment buttons in MultiSelectPanel ───────────────── */
+.align-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}

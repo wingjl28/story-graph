@@ -57,6 +57,13 @@ const CY_STYLE = [
     },
   },
   {
+    selector: 'edge.bidir',
+    style: {
+      'source-arrow-shape': 'triangle',
+      'source-arrow-color': 'data(color)',
+    },
+  },
+  {
     selector: 'node:selected',
     style: {
       'border-color': '#a78bfa',
@@ -70,6 +77,7 @@ const CY_STYLE = [
     style: {
       'line-color': '#a78bfa',
       'target-arrow-color': '#a78bfa',
+      'source-arrow-color': '#a78bfa',
       'width': 2.5,
     },
   },
@@ -78,6 +86,28 @@ const CY_STYLE = [
     style: { display: 'none' },
   },
 ]
+
+// Collapse A→B + B→A pairs (same label) into one bidirectional edge
+function buildEdges(edges) {
+  const seenKeys = new Map()
+  const result = []
+  for (const edge of edges) {
+    const { source, target, label } = edge.data
+    const revKey = `${target}→${source}→${label}`
+    if (seenKeys.has(revKey)) {
+      const idx = seenKeys.get(revKey)
+      result[idx] = {
+        ...result[idx],
+        data: { ...result[idx].data, bidirectional: true, bidir_rel_id: edge.data.rel_id },
+        classes: 'bidir',
+      }
+    } else {
+      seenKeys.set(`${source}→${target}→${label}`, result.length)
+      result.push(edge)
+    }
+  }
+  return result
+}
 
 const POSITIONS_KEY = (graphId) => `sg-positions-${graphId}`
 
@@ -135,7 +165,42 @@ const GraphView = forwardRef(function GraphView(
     },
     clearSelection: () => cy.current?.elements().unselect(),
     setPendingPosition: (nodeId, pos) => pendingPositionsRef.current.set(String(nodeId), pos),
+    alignNodes: (nodeIds, alignment) => {
+      if (!cy.current || nodeIds.length < 2) return
+      const cyNodes = nodeIds.map(id => cy.current.getElementById(String(id))).filter(n => n.length > 0)
+      if (cyNodes.length < 2) return
+      if (alignment === 'center-v') {
+        const avgX = cyNodes.reduce((s, n) => s + n.position().x, 0) / cyNodes.length
+        cyNodes.forEach(n => n.position({ x: avgX, y: n.position().y }))
+      } else if (alignment === 'center-h') {
+        const avgY = cyNodes.reduce((s, n) => s + n.position().y, 0) / cyNodes.length
+        cyNodes.forEach(n => n.position({ x: n.position().x, y: avgY }))
+      } else if (alignment === 'dist-v') {
+        const sorted = [...cyNodes].sort((a, b) => a.position().y - b.position().y)
+        const minY = sorted[0].position().y
+        const maxY = sorted[sorted.length - 1].position().y
+        const step = (maxY - minY) / (sorted.length - 1)
+        sorted.forEach((n, i) => n.position({ x: n.position().x, y: minY + i * step }))
+      } else if (alignment === 'dist-h') {
+        const sorted = [...cyNodes].sort((a, b) => a.position().x - b.position().x)
+        const minX = sorted[0].position().x
+        const maxX = sorted[sorted.length - 1].position().x
+        const step = (maxX - minX) / (sorted.length - 1)
+        sorted.forEach((n, i) => n.position({ x: minX + i * step, y: n.position().y }))
+      }
+      const positions = {}
+      cy.current.nodes().forEach(n => { const p = n.position(); positions[n.id()] = { x: p.x, y: p.y } })
+      savePositions(graphIdRef.current, positions)
+    },
   }))
+
+  // Keep Cytoscape aware of container size changes (fixes edges not rendering on init)
+  useEffect(() => {
+    if (!containerRef.current) return
+    const ro = new ResizeObserver(() => cy.current?.resize())
+    ro.observe(containerRef.current)
+    return () => ro.disconnect()
+  }, [])
 
   // Initialise Cytoscape once
   useEffect(() => {
@@ -267,7 +332,8 @@ const GraphView = forwardRef(function GraphView(
     cy.current.nodes().filter((n) => !incomingIds.has(n.id())).remove()
 
     cy.current.edges().remove()
-    cy.current.add(graphData.edges)
+    cy.current.add(buildEdges(graphData.edges))
+    cy.current.forceRender()
 
     if (isInitialLoad && cy.current.nodes().length > 0) {
       const saved = loadSavedPositions(graphIdRef.current)

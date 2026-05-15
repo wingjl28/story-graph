@@ -286,6 +286,32 @@ export default function App() {
     }
   }, [loadStoryGraphs, handleSwitchGraph])
 
+  const handleRenameGraph = useCallback(async (gid) => {
+    const graph = storyGraphs.find(g => g.id === gid)
+    const newTitle = window.prompt('Rename story:', graph?.title || '')
+    if (!newTitle?.trim() || newTitle.trim() === graph?.title) return
+    try {
+      await api.updateStoryGraph(gid, { title: newTitle.trim() })
+      await loadStoryGraphs()
+    } catch (e) {
+      setError(e.message)
+    }
+  }, [storyGraphs, loadStoryGraphs])
+
+  const handleDeleteGraph = useCallback(async (gid) => {
+    const graph = storyGraphs.find(g => g.id === gid)
+    if (!window.confirm(`Delete "${graph?.title}"? All nodes in this story will be deleted.`)) return
+    try {
+      await api.deleteStoryGraph(gid)
+      const remaining = storyGraphs.filter(g => g.id !== gid)
+      const nextId = remaining[0]?.id ?? 1
+      await loadStoryGraphs()
+      await handleSwitchGraph(nextId)
+    } catch (e) {
+      setError(e.message)
+    }
+  }, [storyGraphs, loadStoryGraphs, handleSwitchGraph])
+
   const handleTagCreated = useCallback((newTag) => {
     setAllTags(prev => [...prev, newTag])
   }, [])
@@ -300,6 +326,10 @@ export default function App() {
       // so we just keep the menu open - it reads from allTags which is updated
     }
   }, [loadGraph, loadTags, selected, refreshNodeRels, taggingNode])
+
+  const handleAlignNodes = useCallback((alignment) => {
+    graphRef.current?.alignNodes(multiSelectedNodeIds, alignment)
+  }, [multiSelectedNodeIds])
 
   const handleBulkHide = useCallback(() => {
     setHiddenNodeIds((prev) => {
@@ -455,6 +485,8 @@ export default function App() {
         activeGraphId={activeGraphId}
         onSwitchGraph={handleSwitchGraph}
         onNewGraph={handleNewGraph}
+        onRenameGraph={handleRenameGraph}
+        onDeleteGraph={handleDeleteGraph}
       />
 
       <main className="graph-area">
@@ -518,6 +550,7 @@ export default function App() {
           onAddRelationship={() => setShowAddRel(true)}
           onHideAll={handleBulkHide}
           onDeleteAll={handleBulkDelete}
+          onAlign={handleAlignNodes}
         />
       )}
 
@@ -553,9 +586,12 @@ export default function App() {
           allTags={allTags}
           initialData={editingNode}
           existingMetaKeys={existingNodeMetaKeys}
+          existingRelLabels={existingRelLabels}
+          nodes={graphData.nodes.map(n => n.data)}
           onSave={afterNodeSaved}
           onClose={() => { setShowAddNode(false); setEditingNode(null) }}
           onTagCreated={handleTagCreated}
+          onTypeCreated={loadNodeTypes}
           graphId={activeGraphId}
         />
       )}
@@ -608,6 +644,15 @@ export default function App() {
             { label: '⊞ Fit All', onClick: () => { graphRef.current?.fitGraph(); setBgContextMenu(null) }},
             { label: '⟲ Relayout', onClick: () => { graphRef.current?.relayout(); setBgContextMenu(null) }},
             { label: selectionMode === 'box' ? '✓ Box Select (on)' : '⬚ Box Select', onClick: () => { setSelectionMode(m => m === 'box' ? 'normal' : 'box'); setBgContextMenu(null) }},
+            ...(multiSelectedNodeIds.length >= 2 ? [
+              'divider',
+              { label: '⟺ Align V-Centers', onClick: () => { handleAlignNodes('center-v'); setBgContextMenu(null) }},
+              { label: '⟺ Align H-Centers', onClick: () => { handleAlignNodes('center-h'); setBgContextMenu(null) }},
+              ...(multiSelectedNodeIds.length >= 3 ? [
+                { label: '↕ Distribute Vertically', onClick: () => { handleAlignNodes('dist-v'); setBgContextMenu(null) }},
+                { label: '↔ Distribute Horizontally', onClick: () => { handleAlignNodes('dist-h'); setBgContextMenu(null) }},
+              ] : []),
+            ] : []),
           ]}
           onClose={() => setBgContextMenu(null)}
         />

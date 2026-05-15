@@ -94,7 +94,7 @@ def init_db() -> None:
         "CREATE TABLE IF NOT EXISTS node_tags (node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE, PRIMARY KEY (node_id, tag_id))",
         "CREATE TABLE IF NOT EXISTS story_graphs (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL DEFAULT 'My Story', description TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         "INSERT OR IGNORE INTO story_graphs (id, title) VALUES (1, 'My Story')",
-        "ALTER TABLE nodes ADD COLUMN graph_id INTEGER NOT NULL DEFAULT 1 REFERENCES story_graphs(id)",
+        "ALTER TABLE nodes ADD COLUMN graph_id INTEGER NOT NULL DEFAULT 1",
     ]:
         try:
             conn.execute(migration)
