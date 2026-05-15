@@ -529,6 +529,7 @@ export default function App() {
           selectionMode={selectionMode}
           multiSelectActive={multiSelectedNodeIds.length > 1}
           onBoxSelectDone={() => setSelectionMode('normal')}
+          onBoxSelectToggle={() => setSelectionMode(m => m === 'box' ? 'normal' : 'box')}
           graphId={activeGraphId}
         />
 
@@ -615,7 +616,13 @@ export default function App() {
       )}
 
       {showSettings && (
-        <SettingsModal nodeTypes={nodeTypes} onUpdateTypes={loadNodeTypes} onClose={() => setShowSettings(false)} onUpdateGraph={loadGraph} activeGraphId={activeGraphId} />
+        <SettingsModal
+          nodeTypes={nodeTypes}
+          onUpdateTypes={async () => { await loadNodeTypes(); await loadGraph() }}
+          onClose={() => setShowSettings(false)}
+          onUpdateGraph={loadGraph}
+          activeGraphId={activeGraphId}
+        />
       )}
 
       {contextMenu && (
@@ -631,8 +638,8 @@ export default function App() {
             { label: ctxIsHidden ? 'Unhide from graph' : 'Hide from graph', onClick: () => toggleHideNode(ctxData.id) },
             ...(multiSelectedNodeIds.length >= 2 ? [
               'divider',
-              { label: '⟺ Align V-Centers', onClick: () => { handleAlignNodes('center-v'); setContextMenu(null) }},
-              { label: '⟺ Align H-Centers', onClick: () => { handleAlignNodes('center-h'); setContextMenu(null) }},
+              { label: '⟺ Align Vertically', onClick: () => { handleAlignNodes('center-v'); setContextMenu(null) }},
+              { label: '⟺ Align Horizontally', onClick: () => { handleAlignNodes('center-h'); setContextMenu(null) }},
               ...(multiSelectedNodeIds.length >= 3 ? [
                 { label: '↕ Distribute Vertically', onClick: () => { handleAlignNodes('dist-v'); setContextMenu(null) }},
                 { label: '↔ Distribute Horizontally', onClick: () => { handleAlignNodes('dist-h'); setContextMenu(null) }},
@@ -661,8 +668,8 @@ export default function App() {
             { label: selectionMode === 'box' ? '✓ Box Select (on)' : '⬚ Box Select', onClick: () => { setSelectionMode(m => m === 'box' ? 'normal' : 'box'); setBgContextMenu(null) }},
             ...(multiSelectedNodeIds.length >= 2 ? [
               'divider',
-              { label: '⟺ Align V-Centers', onClick: () => { handleAlignNodes('center-v'); setBgContextMenu(null) }},
-              { label: '⟺ Align H-Centers', onClick: () => { handleAlignNodes('center-h'); setBgContextMenu(null) }},
+              { label: '⟺ Align Vertically', onClick: () => { handleAlignNodes('center-v'); setBgContextMenu(null) }},
+              { label: '⟺ Align Horizontally', onClick: () => { handleAlignNodes('center-h'); setBgContextMenu(null) }},
               ...(multiSelectedNodeIds.length >= 3 ? [
                 { label: '↕ Distribute Vertically', onClick: () => { handleAlignNodes('dist-v'); setBgContextMenu(null) }},
                 { label: '↔ Distribute Horizontally', onClick: () => { handleAlignNodes('dist-h'); setBgContextMenu(null) }},

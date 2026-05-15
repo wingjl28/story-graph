@@ -39,8 +39,8 @@ class Tag(BaseModel):
     id: int
     name: str
     color: str
-    scope: str
-    graph_id: Optional[int]
+    scope: str = 'shared'
+    graph_id: Optional[int] = None
     count: int
 
 
@@ -68,11 +68,11 @@ class NodeType(BaseModel):
     id: int
     name: str
     color: str
-    font_color: Optional[str]
-    description: Optional[str]
-    is_date_type: bool
-    scope: str
-    graph_id: Optional[int]
+    font_color: Optional[str] = None
+    description: Optional[str] = None
+    is_date_type: bool = False
+    scope: str = 'shared'
+    graph_id: Optional[int] = None
     created_at: datetime
 
 

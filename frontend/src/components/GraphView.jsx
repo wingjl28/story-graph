@@ -126,7 +126,7 @@ const GraphView = forwardRef(function GraphView(
     selectedId, focusNodeId, onFocusConsumed,
     hiddenNodeIds, hiddenEdgeIds,
     onSelectionChange, selectionMode, multiSelectActive,
-    onBoxSelectDone, graphId,
+    onBoxSelectDone, onBoxSelectToggle, graphId,
   },
   ref,
 ) {
@@ -144,6 +144,7 @@ const GraphView = forwardRef(function GraphView(
   const onSelectionChangeRef = useRef(onSelectionChange)
   const selectionModeRef = useRef(selectionMode)
   const onBoxSelectDoneRef = useRef(onBoxSelectDone)
+  const onBoxSelectToggleRef = useRef(onBoxSelectToggle)
   const boxSelectTimerRef = useRef(null)
   const pendingPositionsRef = useRef(new Map())
 
@@ -157,6 +158,7 @@ const GraphView = forwardRef(function GraphView(
   useEffect(() => { onSelectionChangeRef.current = onSelectionChange }, [onSelectionChange])
   useEffect(() => { selectionModeRef.current = selectionMode }, [selectionMode])
   useEffect(() => { onBoxSelectDoneRef.current = onBoxSelectDone }, [onBoxSelectDone])
+  useEffect(() => { onBoxSelectToggleRef.current = onBoxSelectToggle }, [onBoxSelectToggle])
 
   useImperativeHandle(ref, () => ({
     resetGraph: () => cy.current?.elements().remove(),
@@ -232,7 +234,12 @@ const GraphView = forwardRef(function GraphView(
 
     cy.current.on('tap', 'edge', (evt) => onEdgeClickRef.current(evt.target.data()))
     cy.current.on('tap', (evt) => {
-      if (evt.target === cy.current) onBgClickRef.current()
+      if (evt.target !== cy.current) return
+      if (evt.originalEvent?.shiftKey) {
+        onBoxSelectToggleRef.current?.()
+      } else {
+        onBgClickRef.current()
+      }
     })
 
     cy.current.on('cxttap', 'node', (evt) => {
@@ -335,7 +342,6 @@ const GraphView = forwardRef(function GraphView(
 
     cy.current.edges().remove()
     cy.current.add(buildEdges(graphData.edges))
-    cy.current.forceRender()
 
     if (isInitialLoad && cy.current.nodes().length > 0) {
       const saved = loadSavedPositions(graphIdRef.current)
@@ -350,6 +356,9 @@ const GraphView = forwardRef(function GraphView(
         cy.current.fit(undefined, 50)
       }
     }
+
+    cy.current.resize()
+    cy.current.forceRender()
   }, [graphData])
 
   // Sync hidden node classes

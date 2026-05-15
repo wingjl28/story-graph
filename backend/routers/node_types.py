@@ -11,7 +11,7 @@ def list_node_types(graph_id: Optional[int] = None):
     conn = get_db()
     if graph_id is not None:
         rows = conn.execute(
-            "SELECT * FROM node_types WHERE scope = 'shared' OR graph_id = ? ORDER BY name",
+            "SELECT * FROM node_types WHERE COALESCE(scope,'shared') = 'shared' OR graph_id = ? ORDER BY name",
             (graph_id,),
         ).fetchall()
     else:

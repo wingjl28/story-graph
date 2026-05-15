@@ -96,10 +96,12 @@ def init_db() -> None:
         "INSERT OR IGNORE INTO story_graphs (id, title) VALUES (1, 'My Story')",
         "ALTER TABLE nodes ADD COLUMN graph_id INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE node_types ADD COLUMN font_color TEXT",
-        "ALTER TABLE node_types ADD COLUMN scope TEXT NOT NULL DEFAULT 'shared'",
+        "ALTER TABLE node_types ADD COLUMN scope TEXT DEFAULT 'shared'",
         "ALTER TABLE node_types ADD COLUMN graph_id INTEGER",
-        "ALTER TABLE tags ADD COLUMN scope TEXT NOT NULL DEFAULT 'shared'",
+        "UPDATE node_types SET scope = 'shared' WHERE scope IS NULL",
+        "ALTER TABLE tags ADD COLUMN scope TEXT DEFAULT 'shared'",
         "ALTER TABLE tags ADD COLUMN graph_id INTEGER",
+        "UPDATE tags SET scope = 'shared' WHERE scope IS NULL",
     ]:
         try:
             conn.execute(migration)

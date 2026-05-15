@@ -62,11 +62,10 @@ export default function NodePanel({
         {nodeData.tags?.length > 0 && (
           <div>
             <div className="panel-section-label">Tags</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 4 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
               {nodeData.tags.map(t => (
-                <span key={t.id} className="filter-type-pill" style={{ borderColor: t.color }}>
-                  <span className="type-dot" style={{ background: t.color }} />
-                  {t.name}
+                <span key={t.id} className="node-tag-chip" style={{ background: t.color }}>
+                  #{t.name}
                 </span>
               ))}
             </div>

@@ -20,7 +20,7 @@ def list_tags(graph_id: Optional[int] = None):
     conn = get_db()
     if graph_id is not None:
         rows = conn.execute(
-            _COUNT_JOIN + " WHERE (t.scope = 'shared' OR t.graph_id = ?) GROUP BY t.id ORDER BY t.name",
+            _COUNT_JOIN + " WHERE (COALESCE(t.scope,'shared') = 'shared' OR t.graph_id = ?) GROUP BY t.id ORDER BY t.name",
             (graph_id,),
         ).fetchall()
     else:

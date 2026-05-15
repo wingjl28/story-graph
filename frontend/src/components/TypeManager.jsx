@@ -51,13 +51,13 @@ export default function TypeManager({ nodeTypes, onUpdate, onClose, embedded = f
                   )}
                   <span style={{
                     fontSize: 10,
-                    color: t.scope === 'shared' ? '#68d391' : '#f6ad55',
-                    background: t.scope === 'shared' ? '#1a3a2a' : '#3a2a0a',
-                    border: `1px solid ${t.scope === 'shared' ? '#38a169' : '#d97706'}`,
+                    color: (t.scope || 'shared') === 'shared' ? '#68d391' : '#f6ad55',
+                    background: (t.scope || 'shared') === 'shared' ? '#1a3a2a' : '#3a2a0a',
+                    border: `1px solid ${(t.scope || 'shared') === 'shared' ? '#38a169' : '#d97706'}`,
                     borderRadius: 10,
                     padding: '1px 6px',
                   }}>
-                    {t.scope === 'shared' ? 'Shared' : 'Story'}
+                    {(t.scope || 'shared') === 'shared' ? 'Shared' : 'Story'}
                   </span>
                 </div>
                 {t.description && <div className="type-item-desc">{t.description}</div>}

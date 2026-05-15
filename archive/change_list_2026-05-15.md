@@ -70,6 +70,22 @@
 ### Round 4
 1. Node positioning resets when switching between stories — fixed by adding `resetGraph()` to GraphView imperative handle and calling it at the top of `handleSwitchGraph` before fetching new graph data; positions are now restored from localStorage on every graph load
 
+## Bugs
+### Round 5
+1. Font color not saving visually — after updating a type, `loadGraph()` is now also called so Cytoscape nodes pick up the new font_color from fresh graph data
+2. Scope badge showing "Story" for shared types — fixed by: (a) using `COALESCE(scope,'shared')` in SQL filter, (b) adding `UPDATE … SET scope='shared' WHERE scope IS NULL` migration, (c) adding `scope: str = 'shared'` default to Pydantic model, (d) using `(t.scope || 'shared')` in frontend badges
+3. Story types/tags showing in other stories — same COALESCE fix in list_node_types + list_tags filter; story-scoped items correctly excluded when graph_id doesn't match
+4. Relationships disappearing after graph switch — moved `cy.current.resize()` and `cy.current.forceRender()` to run AFTER positions/layout are applied (previously forceRender was called before positions were set)
+5. Changing node type color not applying to existing nodes — same fix as Bug 1: `loadGraph()` called after any type save in Settings
+
+## Enhancements
+### Round 5
+1. Shift+Click on canvas background to toggle box-select mode
+2. Renamed "Align V-Centers" → "Align Vertically" in MultiSelectPanel and both context menus
+3. Renamed "Align H-Centers" → "Align Horizontally" in MultiSelectPanel and both context menus
+4. Updated icon for "Align Horizontally" button to `carbon:distribute-vertical-center` (shows vertical arrows, matching user request)
+5. Node tag display in NodePanel updated to colored chip style (`.node-tag-chip` — rounded pill with tag's background color)
+
 ## Enhancements
 ### Round 4
 1. Classify Types and Tags as "Shared" or "Story":
