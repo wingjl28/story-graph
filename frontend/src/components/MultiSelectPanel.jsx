@@ -40,12 +40,12 @@ export default function MultiSelectPanel({
         <div style={{ marginTop: 12 }}>
           <div className="panel-section-label" style={{ marginBottom: 6 }}>Align</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-            <button className="btn btn-ghost btn-sm align-btn" onClick={() => onAlign?.('center-v')} title="Align Vertically">
+            <button className="btn btn-ghost btn-sm align-btn" onClick={() => onAlign?.('center-v')} title="Align V-Centers">
               <Icon icon="carbon:align-vertical-center" width={13} style={{ marginRight: 4 }} />
               Align V
             </button>
-            <button className="btn btn-ghost btn-sm align-btn" onClick={() => onAlign?.('center-h')} title="Align Horizontally">
-              <Icon icon="carbon:distribute-vertical-center" width={13} style={{ marginRight: 4 }} />
+            <button className="btn btn-ghost btn-sm align-btn" onClick={() => onAlign?.('center-h')} title="Align H-Centers">
+              <Icon icon="carbon:align-horizontal-center" width={13} style={{ marginRight: 4 }} />
               Align H
             </button>
             <button className="btn btn-ghost btn-sm align-btn" onClick={() => onAlign?.('dist-v')} disabled={!canDist} title="Distribute vertically">
