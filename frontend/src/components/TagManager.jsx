@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Icon } from '@iconify/react'
 import { api } from '../api'
 
 const randomColor = () => '#' + Math.floor(Math.random() * 0xFFFFFF).toString(16).padStart(6, '0')
@@ -32,8 +33,8 @@ export default function TagManager({ embedded = false, onClose, onUpdate }) {
               <span style={{ fontSize: 11, color: '#4a5568', marginLeft: 8 }}>{t.count} node{t.count !== 1 ? 's' : ''}</span>
             </div>
             <div className="type-item-actions">
-              <button className="btn-icon" onClick={() => setEditingId(t.id)}>✏️</button>
-              <button className="btn-icon danger" onClick={() => handleDelete(t)}>🗑</button>
+              <button className="btn-icon" onClick={() => setEditingId(t.id)} title="Edit"><Icon icon="carbon:edit" width={14} /></button>
+              <button className="btn-icon danger" onClick={() => handleDelete(t)} title="Delete"><Icon icon="carbon:trash-can" width={14} /></button>
             </div>
           </div>
         ))}
@@ -52,7 +53,7 @@ export default function TagManager({ embedded = false, onClose, onUpdate }) {
       <div className="modal modal-lg">
         <div className="modal-header">
           <span className="modal-title">Manage Tags</span>
-          <button className="panel-close" onClick={onClose}>×</button>
+          <button className="panel-close" onClick={onClose}><Icon icon="carbon:close" width={18} /></button>
         </div>
         <div className="modal-body">{inner}</div>
         <div className="modal-footer"><button className="btn btn-primary" onClick={onClose}>Done</button></div>
@@ -86,7 +87,7 @@ function TagForm({ initial, onSave, onCancel }) {
             <label className="form-label">Color</label>
             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
               <input type="color" value={color} onChange={e => setColor(e.target.value)} />
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setColor(randomColor())} title="Random color">🎲</button>
+              <button type="button" className="btn-icon" onClick={() => setColor(randomColor())} title="Random color"><Icon icon="carbon:shuffle" width={14} /></button>
             </div>
           </div>
         </div>

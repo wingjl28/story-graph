@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Icon } from '@iconify/react'
 import { api } from '../api'
 
 export default function RelTypeManager({ onClose, embedded = false, onUpdate }) {
@@ -36,10 +37,10 @@ export default function RelTypeManager({ onClose, embedded = false, onUpdate }) 
                 />
                 <button
                   type="button"
-                  className="btn btn-ghost btn-sm"
-                  style={{ padding: '2px 6px', fontSize: 12 }}
+                  className="btn-icon"
+                  title="Random color"
                   onClick={() => handleColorChange(rt.label, '#' + Math.floor(Math.random() * 0xFFFFFF).toString(16).padStart(6, '0'))}
-                >🎲</button>
+                ><Icon icon="carbon:shuffle" width={14} /></button>
               </div>
               <span className="rel-type-label">{rt.label}</span>
               <span className="rel-type-count">{rt.count} rel{rt.count !== 1 ? 's' : ''}</span>
@@ -59,7 +60,7 @@ export default function RelTypeManager({ onClose, embedded = false, onUpdate }) 
       <div className="modal">
         <div className="modal-header">
           <span className="modal-title">Relationship Colors</span>
-          <button className="panel-close" onClick={onClose}>×</button>
+          <button className="panel-close" onClick={onClose}><Icon icon="carbon:close" width={18} /></button>
         </div>
         <div className="modal-body">
           {innerContent}

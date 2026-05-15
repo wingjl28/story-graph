@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { Icon } from '@iconify/react'
 
 export default function NodePanel({
   nodeData,
@@ -40,7 +41,7 @@ export default function NodePanel({
           </div>
           <div className="panel-title">{nodeData.label}</div>
         </div>
-        <button className="panel-close" onClick={onClose} title="Close">×</button>
+        <button className="panel-close" onClick={onClose} title="Close"><Icon icon="carbon:close" width={18} /></button>
       </div>
 
       <div className="panel-body">
@@ -159,8 +160,8 @@ function RelItem({ rel, direction, currentId, onDelete, onSwap }) {
           <div style={{ marginTop: 4, color: '#4a5568', fontSize: 11 }}>{rel.notes}</div>
         )}
       </div>
-      <button className="rel-swap" title="Swap direction" onClick={() => onSwap(rel.id)}>↔</button>
-      <button className="rel-delete" title="Delete relationship" onClick={() => onDelete(rel.id)}>×</button>
+      <button className="rel-swap" title="Swap direction" onClick={() => onSwap(rel.id)}><Icon icon="carbon:arrows-vertical" width={13} /></button>
+      <button className="rel-delete" title="Delete relationship" onClick={() => onDelete(rel.id)}><Icon icon="carbon:close" width={14} /></button>
     </div>
   )
 }

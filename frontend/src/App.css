@@ -60,11 +60,57 @@
 }
 
 .sidebar-actions {
-  padding: 12px 16px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  border-bottom: 1px solid #2d3748;
 }
+
+.sidebar-action-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.sidebar-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 4px;
+}
+
+.sidebar-timeline-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+/* Story graph selector */
+.graph-selector {
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid #2d3748;
+  min-width: 260px;
+}
+
+.graph-select {
+  flex: 1;
+  background: #0f1117;
+  border: 1px solid #2d3748;
+  color: #e2e8f0;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  min-width: 0;
+}
+.graph-select:focus { outline: none; border-color: #6366f1; }
+.graph-select option { background: #1a1f2e; }
 
 .sidebar-meta {
   padding: 0 16px 8px;
@@ -1313,5 +1359,43 @@ input[type='color'] {
 .panel-drag-handle { cursor: grab; }
 .panel-drag-handle:active { cursor: grabbing; }
 
-/* ── Tag chips ───────────────────────────────────────────── */
-/* Uses existing .filter-type-pill styles */
+/* ── Strikethrough for hidden sidebar chips ─────────────── */
+.sb-chip.hidden .sb-chip-label { text-decoration: line-through; }
+
+/* ── Floating draggable modal (no overlay) ──────────────── */
+.floating-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  resize: both;
+  overflow: hidden;
+  z-index: 200;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.75);
+  min-width: 360px;
+  min-height: 200px;
+}
+.floating-modal .modal-body { overflow-y: auto; }
+.floating-modal .modal-header { user-select: none; }
+
+/* ── Quick tag menu ──────────────────────────────────────── */
+.quick-tag-menu {
+  position: fixed;
+  background: #1a1f2e;
+  border: 1px solid #2d3748;
+  border-radius: 8px;
+  min-width: 200px;
+  max-width: 260px;
+  z-index: 1100;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  padding: 4px 0 0;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.quick-tag-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.quick-tag-item.active { background: #1e2535; }
+.quick-tag-item.active .sb-chip-label { font-weight: 500; }

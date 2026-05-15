@@ -51,5 +51,11 @@ export const api = {
   removeNodeTag: (nodeId, tagId) => del(`/tags/nodes/${nodeId}/${tagId}`),
 
   // Graph
-  getGraph: () => get('/graph'),
+  getGraph: (graphId = 1) => get(`/graph?graph_id=${graphId}`),
+
+  // Story Graphs
+  getStoryGraphs: () => get('/story-graphs'),
+  createStoryGraph: (data) => post('/story-graphs', data),
+  updateStoryGraph: (id, data) => put(`/story-graphs/${id}`, data),
+  deleteStoryGraph: (id) => del(`/story-graphs/${id}`),
 }

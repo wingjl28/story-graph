@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from .database import init_db
-from .routers import node_types, nodes, relationships, graph, rel_types, tags
+from .routers import node_types, nodes, relationships, graph, rel_types, tags, story_graphs
 
 
 @asynccontextmanager
@@ -30,6 +30,7 @@ app.include_router(relationships.router, prefix="/api")
 app.include_router(graph.router, prefix="/api")
 app.include_router(rel_types.router, prefix="/api")
 app.include_router(tags.router, prefix="/api")
+app.include_router(story_graphs.router, prefix="/api")
 
 _dist = Path(__file__).parent.parent / "frontend" / "dist"
 _index = _dist / "index.html"

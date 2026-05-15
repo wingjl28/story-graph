@@ -3,6 +3,21 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 
+class StoryGraph(BaseModel):
+    id: int
+    title: str
+    description: Optional[str]
+    created_at: datetime
+
+class StoryGraphCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+
+class StoryGraphUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+
+
 class NodeTag(BaseModel):
     id: int
     name: str
@@ -49,6 +64,7 @@ class NodeType(BaseModel):
 class NodeCreate(BaseModel):
     name: str
     type_id: int
+    graph_id: int = 1
     description: Optional[str] = None
     metadata: Dict[str, Any] = {}
     date: Optional[str] = None
@@ -68,6 +84,7 @@ class Node(BaseModel):
     id: int
     name: str
     type_id: int
+    graph_id: int = 1
     type_name: str
     type_color: str
     type_is_date_type: bool

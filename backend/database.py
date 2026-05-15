@@ -19,6 +19,13 @@ DEFAULT_TYPES = [
 SCHEMA = """
 PRAGMA foreign_keys = ON;
 
+CREATE TABLE IF NOT EXISTS story_graphs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT    NOT NULL DEFAULT 'My Story',
+    description TEXT,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS node_types (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     name         TEXT    NOT NULL UNIQUE,
@@ -32,6 +39,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT    NOT NULL,
     type_id     INTEGER NOT NULL REFERENCES node_types(id),
+    graph_id    INTEGER NOT NULL DEFAULT 1 REFERENCES story_graphs(id) ON DELETE CASCADE,
     description TEXT,
     metadata    TEXT    NOT NULL DEFAULT '{}',
     date        TEXT,
@@ -84,6 +92,9 @@ def init_db() -> None:
         "ALTER TABLE nodes ADD COLUMN date TEXT",
         "CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, color TEXT NOT NULL DEFAULT '#a78bfa')",
         "CREATE TABLE IF NOT EXISTS node_tags (node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE, PRIMARY KEY (node_id, tag_id))",
+        "CREATE TABLE IF NOT EXISTS story_graphs (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL DEFAULT 'My Story', description TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+        "INSERT OR IGNORE INTO story_graphs (id, title) VALUES (1, 'My Story')",
+        "ALTER TABLE nodes ADD COLUMN graph_id INTEGER NOT NULL DEFAULT 1 REFERENCES story_graphs(id)",
     ]:
         try:
             conn.execute(migration)

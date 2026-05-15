@@ -17,10 +17,10 @@ def _parse_tags(tags_raw):
 
 
 @router.get("")
-def get_graph():
+def get_graph(graph_id: int = 1):
     conn = get_db()
     nodes = conn.execute("""
-        SELECT n.id, n.name, n.description, n.metadata, n.date,
+        SELECT n.id, n.name, n.description, n.metadata, n.date, n.graph_id,
                nt.name AS type_name, nt.color AS type_color, nt.id AS type_id,
                nt.is_date_type,
                GROUP_CONCAT(t.id || ':' || t.name || ':' || t.color, '|') AS tags_raw
@@ -28,8 +28,9 @@ def get_graph():
         JOIN node_types nt ON n.type_id = nt.id
         LEFT JOIN node_tags ntj ON n.id = ntj.node_id
         LEFT JOIN tags t ON ntj.tag_id = t.id
+        WHERE n.graph_id = ?
         GROUP BY n.id
-    """).fetchall()
+    """, (graph_id,)).fetchall()
     edges = conn.execute("""
         SELECT r.id, r.source_id, r.target_id, r.label, r.notes, r.metadata,
                sn.name AS source_name, tn.name AS target_name,
@@ -38,7 +39,8 @@ def get_graph():
         JOIN nodes sn ON r.source_id = sn.id
         JOIN nodes tn ON r.target_id = tn.id
         LEFT JOIN rel_types rt ON r.label = rt.label
-    """).fetchall()
+        WHERE sn.graph_id = ?
+    """, (graph_id,)).fetchall()
     conn.close()
 
     cy_nodes = [
@@ -52,6 +54,7 @@ def get_graph():
                 "description": n["description"],
                 "metadata": json.loads(n["metadata"] or "{}"),
                 "date": n["date"],
+                "graph_id": n["graph_id"],
                 "is_date_type": bool(n["is_date_type"]),
                 "tags": _parse_tags(n["tags_raw"]),
             }

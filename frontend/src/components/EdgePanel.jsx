@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { Icon } from '@iconify/react'
 import { api } from '../api'
 
 export default function EdgePanel({ edgeData, onDelete, onClose, onSaved, existingLabels, existingMetaKeys }) {
@@ -81,7 +82,7 @@ export default function EdgePanel({ edgeData, onDelete, onClose, onSaved, existi
           <div className="panel-type-badge">Relationship</div>
           <div className="panel-title" style={{ color: '#a78bfa' }}>{edgeData.label}</div>
         </div>
-        <button className="panel-close" onClick={onClose}>×</button>
+        <button className="panel-close" onClick={onClose}><Icon icon="carbon:close" width={18} /></button>
       </div>
 
       <div className="panel-body">
@@ -158,7 +159,7 @@ export default function EdgePanel({ edgeData, onDelete, onClose, onSaved, existi
                         value={pair.v}
                         onChange={(e) => updateKv(i, 'v', e.target.value)}
                       />
-                      <button type="button" className="kv-remove" onClick={() => removeKv(i)}>×</button>
+                      <button type="button" className="kv-remove" onClick={() => removeKv(i)}><Icon icon="carbon:close" width={13} /></button>
                     </div>
                   ))}
                 </div>
@@ -187,8 +188,8 @@ export default function EdgePanel({ edgeData, onDelete, onClose, onSaved, existi
         {!editing && (
           <>
             <button className="btn btn-secondary btn-sm" onClick={() => setEditing(true)}>Edit</button>
-            <button className="btn btn-secondary btn-sm" onClick={handleSwap} disabled={saving}>
-              {saving ? '…' : '↕ Swap'}
+            <button className="btn btn-secondary btn-sm" onClick={handleSwap} disabled={saving} title="Swap direction">
+              {saving ? '…' : <><Icon icon="carbon:arrows-vertical" width={13} style={{ marginRight: 4 }} />Swap</>}
             </button>
           </>
         )}

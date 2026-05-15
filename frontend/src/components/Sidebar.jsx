@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { Icon } from '@iconify/react'
 
 function Section({ title, badge, collapsed, onToggle, headerRight, children }) {
   return (
@@ -47,6 +48,10 @@ export default function Sidebar({
   onUpdateFilter,
   onRemoveFilter,
   onNodeFocus,
+  storyGraphs,
+  activeGraphId,
+  onSwitchGraph,
+  onNewGraph,
 }) {
   const [collapsed, setCollapsed] = useState({ filter: false, nodes: false, rels: false, types: false, tags: false })
   const [sort, setSort] = useState({ nodes: 'alpha', rels: 'alpha', types: 'alpha', tags: 'alpha' })
@@ -75,6 +80,8 @@ export default function Sidebar({
 
   const sortedTypes = useMemo(() => [...nodeTypes].sort((a, b) => a.name.localeCompare(b.name)), [nodeTypes])
 
+  const activeGraph = storyGraphs?.find(g => g.id === activeGraphId)
+
   return (
     <aside className={`sidebar${open ? '' : ' collapsed'}`}>
       <div className="sidebar-header">
@@ -87,15 +94,47 @@ export default function Sidebar({
           </p>
         </div>
         <div className="sidebar-header-btns">
-          <button className="sidebar-icon-btn" onClick={onOpenSettings} title="Settings">⚙</button>
-          <button className="sidebar-collapse-btn" onClick={onCollapse} title="Collapse sidebar">‹</button>
+          <button className="sidebar-icon-btn" onClick={onOpenSettings} title="Settings">
+            <Icon icon="carbon:settings" width={16} />
+          </button>
+          <button className="sidebar-collapse-btn" onClick={onCollapse} title="Collapse sidebar">
+            <Icon icon="carbon:chevron-left" width={18} />
+          </button>
         </div>
       </div>
 
+      {/* Story graph selector */}
+      {storyGraphs && storyGraphs.length > 0 && (
+        <div className="graph-selector">
+          <select
+            className="graph-select"
+            value={activeGraphId}
+            onChange={e => onSwitchGraph(parseInt(e.target.value))}
+            title="Switch story graph"
+          >
+            {storyGraphs.map(g => (
+              <option key={g.id} value={g.id}>{g.title}</option>
+            ))}
+          </select>
+          <button className="sidebar-icon-btn" onClick={onNewGraph} title="New story graph">
+            <Icon icon="carbon:add" width={15} />
+          </button>
+        </div>
+      )}
+
       <div className="sidebar-actions">
-        <button className="btn btn-primary" onClick={onAddNode}>+ Node</button>
-        <button className="btn btn-secondary" onClick={onAddRelationship}>+ Rel</button>
-        <button className="btn btn-ghost btn-sm" onClick={onShowTimeline} title="Timeline">📅</button>
+        <div className="sidebar-action-row">
+          <button className="btn btn-primary sidebar-action-btn" onClick={onAddNode} title="Add Node">
+            <Icon icon="carbon:network-3" width={18} />
+          </button>
+          <button className="btn btn-secondary sidebar-action-btn" onClick={onAddRelationship} title="Add Relationship">
+            <Icon icon="carbon:connect" width={18} />
+          </button>
+        </div>
+        <button className="btn btn-ghost btn-sm sidebar-timeline-btn" onClick={onShowTimeline} title="Timeline">
+          <Icon icon="carbon:calendar" width={14} style={{ marginRight: 4 }} />
+          Timeline
+        </button>
       </div>
 
       <div className="sidebar-sections">
@@ -113,23 +152,21 @@ export default function Sidebar({
                   className={`sb-scope-btn${f.searchNodes ? ' active' : ''}`}
                   onClick={() => onUpdateFilter(f.id, { searchNodes: !f.searchNodes })}
                   title="Filter nodes"
-                >
-                  N
-                </button>
+                >N</button>
                 <button
                   className={`sb-scope-btn${f.searchRels ? ' active' : ''}`}
                   onClick={() => onUpdateFilter(f.id, { searchRels: !f.searchRels })}
                   title="Filter relationships"
-                >
-                  R
-                </button>
+                >R</button>
                 <input
                   className="sb-filter-input"
                   value={f.text}
                   onChange={(e) => onUpdateFilter(f.id, { text: e.target.value })}
                   placeholder="Filter… (* wildcard)"
                 />
-                <button className="sb-filter-remove" onClick={() => onRemoveFilter(f.id)}>×</button>
+                <button className="sb-filter-remove" onClick={() => onRemoveFilter(f.id)}>
+                  <Icon icon="carbon:close" width={13} />
+                </button>
               </div>
             ))}
           </div>
@@ -144,10 +181,14 @@ export default function Sidebar({
           onToggle={() => toggleSection('nodes')}
           headerRight={
             <>
-              <button className="sb-action-btn" onClick={onHideAllNodes} title="Hide all nodes">⊝</button>
-              <button className="sb-action-btn" onClick={onUnhideAllNodes} title="Show all nodes">⊕</button>
-              <button className="sb-action-btn" onClick={() => setSort(s => ({ ...s, nodes: s.nodes === 'alpha' ? 'type' : 'alpha' }))} title="Sort">
-                {sort.nodes === 'alpha' ? 'A-Z' : 'Type'}
+              <button className="sb-action-btn" onClick={onHideAllNodes} title="Hide all nodes">
+                <Icon icon="carbon:view-off" width={12} />
+              </button>
+              <button className="sb-action-btn" onClick={onUnhideAllNodes} title="Show all nodes">
+                <Icon icon="carbon:view" width={12} />
+              </button>
+              <button className="sb-action-btn" onClick={() => setSort(s => ({ ...s, nodes: s.nodes === 'alpha' ? 'type' : 'alpha' }))} title={sort.nodes === 'alpha' ? 'Sort by type' : 'Sort A-Z'}>
+                <Icon icon={sort.nodes === 'alpha' ? 'carbon:sort-ascending' : 'carbon:category'} width={12} />
               </button>
             </>
           }
@@ -170,7 +211,7 @@ export default function Sidebar({
                     title={isHidden ? 'Show' : 'Hide'}
                     onClick={(e) => { e.stopPropagation(); onToggleHideNode(n.id) }}
                   >
-                    {isHidden ? '○' : '●'}
+                    <Icon icon={isHidden ? 'carbon:view-off' : 'carbon:view'} width={10} />
                   </span>
                 </button>
               )
@@ -186,8 +227,12 @@ export default function Sidebar({
           onToggle={() => toggleSection('rels')}
           headerRight={
             <>
-              <button className="sb-action-btn" onClick={onHideAllRelLabels} title="Hide all rels">⊝</button>
-              <button className="sb-action-btn" onClick={onUnhideAllRelLabels} title="Show all rels">⊕</button>
+              <button className="sb-action-btn" onClick={onHideAllRelLabels} title="Hide all rels">
+                <Icon icon="carbon:view-off" width={12} />
+              </button>
+              <button className="sb-action-btn" onClick={onUnhideAllRelLabels} title="Show all rels">
+                <Icon icon="carbon:view" width={12} />
+              </button>
             </>
           }
         >
@@ -210,7 +255,7 @@ export default function Sidebar({
                     title={isHidden ? 'Show' : 'Hide'}
                     onClick={(e) => { e.stopPropagation(); onToggleHideRelLabel(rel.label) }}
                   >
-                    {isHidden ? '○' : '●'}
+                    <Icon icon={isHidden ? 'carbon:view-off' : 'carbon:view'} width={10} />
                   </span>
                 </button>
               )
@@ -226,8 +271,12 @@ export default function Sidebar({
           onToggle={() => toggleSection('types')}
           headerRight={
             <>
-              <button className="sb-action-btn" onClick={onHideAllTypes} title="Hide all types">⊝</button>
-              <button className="sb-action-btn" onClick={onUnhideAllTypes} title="Show all types">⊕</button>
+              <button className="sb-action-btn" onClick={onHideAllTypes} title="Hide all types">
+                <Icon icon="carbon:view-off" width={12} />
+              </button>
+              <button className="sb-action-btn" onClick={onUnhideAllTypes} title="Show all types">
+                <Icon icon="carbon:view" width={12} />
+              </button>
             </>
           }
         >
@@ -259,8 +308,12 @@ export default function Sidebar({
             onToggle={() => toggleSection('tags')}
             headerRight={
               <>
-                <button className="sb-action-btn" onClick={onHideAllTagNames} title="Hide all tags">⊝</button>
-                <button className="sb-action-btn" onClick={onUnhideAllTagNames} title="Show all tags">⊕</button>
+                <button className="sb-action-btn" onClick={onHideAllTagNames} title="Hide all tags">
+                  <Icon icon="carbon:view-off" width={12} />
+                </button>
+                <button className="sb-action-btn" onClick={onUnhideAllTagNames} title="Show all tags">
+                  <Icon icon="carbon:view" width={12} />
+                </button>
               </>
             }
           >

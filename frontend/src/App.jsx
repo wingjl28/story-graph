@@ -9,6 +9,7 @@ import SettingsModal from './components/SettingsModal'
 import MultiSelectPanel from './components/MultiSelectPanel'
 import ContextMenu from './components/ContextMenu'
 import Timeline from './components/Timeline'
+import QuickTagMenu from './components/QuickTagMenu'
 import { api } from './api'
 import { wildcardMatch } from './utils'
 import './App.css'
@@ -29,6 +30,10 @@ export default function App() {
   const [pendingNodePosition, setPendingNodePosition] = useState(null)
   const [bgContextMenu, setBgContextMenu] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
+  const [storyGraphs, setStoryGraphs] = useState([])
+  const [activeGraphId, setActiveGraphId] = useState(1)
+  const [showNewGraph, setShowNewGraph] = useState(false)
+  const [taggingNode, setTaggingNode] = useState(null)
 
   const [showTimeline, setShowTimeline] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -100,13 +105,25 @@ export default function App() {
     return new Set([...byLabel, ...filterHiddenEdgeIds])
   }, [graphData.edges, hiddenRelLabels, filterHiddenEdgeIds])
 
-  const loadGraph = useCallback(async () => {
+  const loadGraph = useCallback(async (gid) => {
     try {
-      setGraphData(await api.getGraph())
+      setGraphData(await api.getGraph(gid ?? activeGraphId))
     } catch (e) {
       setError(e.message)
     }
-  }, [])
+  }, [activeGraphId])
+
+  const loadStoryGraphs = useCallback(async () => {
+    try {
+      const graphs = await api.getStoryGraphs()
+      setStoryGraphs(graphs)
+      if (graphs.length > 0 && !graphs.find(g => g.id === activeGraphId)) {
+        setActiveGraphId(graphs[0].id)
+      }
+    } catch (e) {
+      setError(e.message)
+    }
+  }, [activeGraphId])
 
   const loadNodeTypes = useCallback(async () => {
     try {
@@ -128,7 +145,8 @@ export default function App() {
     loadGraph()
     loadNodeTypes()
     loadTags()
-  }, [loadGraph, loadNodeTypes, loadTags])
+    loadStoryGraphs()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshNodeRels = useCallback(async (nodeId) => {
     try {
@@ -239,6 +257,49 @@ export default function App() {
   }, [])
   const hideAllTagNames = useCallback(() => setHiddenTagNames(new Set(allTags.map(t => t.name))), [allTags])
   const unhideAllTagNames = useCallback(() => setHiddenTagNames(new Set()), [])
+
+  const handleSwitchGraph = useCallback(async (gid) => {
+    setActiveGraphId(gid)
+    setSelected(null)
+    setNodeRelationships([])
+    setMultiSelectedNodeIds([])
+    setHiddenNodeIds(new Set())
+    setHiddenRelLabels(new Set())
+    setHiddenTagNames(new Set())
+    setFilters([])
+    try {
+      setGraphData(await api.getGraph(gid))
+    } catch (e) {
+      setError(e.message)
+    }
+  }, [])
+
+  const handleNewGraph = useCallback(async () => {
+    const title = window.prompt('New story graph name:')
+    if (!title?.trim()) return
+    try {
+      const g = await api.createStoryGraph({ title: title.trim() })
+      await loadStoryGraphs()
+      await handleSwitchGraph(g.id)
+    } catch (e) {
+      setError(e.message)
+    }
+  }, [loadStoryGraphs, handleSwitchGraph])
+
+  const handleTagCreated = useCallback((newTag) => {
+    setAllTags(prev => [...prev, newTag])
+  }, [])
+
+  const handleTagChanged = useCallback(async () => {
+    await loadGraph()
+    await loadTags()
+    if (selected?.type === 'node') await refreshNodeRels(selected.id)
+    // Refresh tagging node data from graph
+    if (taggingNode) {
+      // Data will refresh via loadGraph, node data will be stale in taggingNode
+      // so we just keep the menu open - it reads from allTags which is updated
+    }
+  }, [loadGraph, loadTags, selected, refreshNodeRels, taggingNode])
 
   const handleBulkHide = useCallback(() => {
     setHiddenNodeIds((prev) => {
@@ -390,6 +451,10 @@ export default function App() {
         open={sidebarOpen}
         onCollapse={() => setSidebarOpen(false)}
         onNodeFocus={handleNodeFocus}
+        storyGraphs={storyGraphs}
+        activeGraphId={activeGraphId}
+        onSwitchGraph={handleSwitchGraph}
+        onNewGraph={handleNewGraph}
       />
 
       <main className="graph-area">
@@ -426,6 +491,7 @@ export default function App() {
           selectionMode={selectionMode}
           multiSelectActive={multiSelectedNodeIds.length > 1}
           onBoxSelectDone={() => setSelectionMode('normal')}
+          graphId={activeGraphId}
         />
 
         <div className="graph-toolbar">
@@ -489,6 +555,8 @@ export default function App() {
           existingMetaKeys={existingNodeMetaKeys}
           onSave={afterNodeSaved}
           onClose={() => { setShowAddNode(false); setEditingNode(null) }}
+          onTagCreated={handleTagCreated}
+          graphId={activeGraphId}
         />
       )}
 
@@ -517,6 +585,7 @@ export default function App() {
           items={ctxIsNode ? [
             { label: '+ Add Relationship', onClick: () => setShowAddRel(true) },
             { label: 'Edit', onClick: () => setEditingNode(ctxData) },
+            { label: 'Tag…', onClick: () => { setTaggingNode({ data: ctxData, x: contextMenu.x, y: contextMenu.y }); setContextMenu(null) } },
             { label: ctxIsHidden ? 'Unhide from graph' : 'Hide from graph', onClick: () => toggleHideNode(ctxData.id) },
             'divider',
             { label: 'Delete', onClick: handleDeleteNode, danger: true },
@@ -550,6 +619,21 @@ export default function App() {
           onClose={() => setShowTimeline(false)}
         />
       )}
+
+      {taggingNode && (() => {
+        const liveNode = graphData.nodes.find(n => String(n.data.id) === String(taggingNode.data.id))
+        const nodeData = liveNode?.data ?? taggingNode.data
+        return (
+          <QuickTagMenu
+            node={nodeData}
+            allTags={allTags}
+            x={taggingNode.x}
+            y={taggingNode.y}
+            onClose={() => setTaggingNode(null)}
+            onChanged={handleTagChanged}
+          />
+        )
+      })()}
     </div>
   )
 }

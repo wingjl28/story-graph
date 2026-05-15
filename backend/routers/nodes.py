@@ -14,7 +14,7 @@ NODE_SELECT_FROM = """
 """
 
 NODE_SELECT_COLS = """
-    SELECT n.id, n.name, n.type_id, n.description, n.metadata, n.date, n.created_at,
+    SELECT n.id, n.name, n.type_id, n.graph_id, n.description, n.metadata, n.date, n.created_at,
            nt.name AS type_name, nt.color AS type_color, nt.is_date_type AS type_is_date_type,
            GROUP_CONCAT(t.id || ':' || t.name || ':' || t.color, '|') AS tags_raw
 """
@@ -60,14 +60,16 @@ def _node_query(where: str = "", params=()):
 
 
 @router.get("", response_model=List[Node])
-def list_nodes(type_id: Optional[int] = None):
+def list_nodes(type_id: Optional[int] = None, graph_id: Optional[int] = None):
     conn = get_db()
+    conditions, params = [], []
     if type_id is not None:
-        sql, params = _node_query("n.type_id = ?", (type_id,))
-        rows = conn.execute(sql + " ORDER BY n.name", params).fetchall()
-    else:
-        sql, params = _node_query()
-        rows = conn.execute(sql + " ORDER BY n.name", params).fetchall()
+        conditions.append("n.type_id = ?"); params.append(type_id)
+    if graph_id is not None:
+        conditions.append("n.graph_id = ?"); params.append(graph_id)
+    where = " AND ".join(conditions) if conditions else ""
+    sql, p = _node_query(where, tuple(params))
+    rows = conn.execute(sql + " ORDER BY n.name", p).fetchall()
     conn.close()
     return [_row_to_node(r) for r in rows]
 
@@ -77,8 +79,8 @@ def create_node(data: NodeCreate):
     conn = get_db()
     try:
         cur = conn.execute(
-            "INSERT INTO nodes (name, type_id, description, metadata, date) VALUES (?, ?, ?, ?, ?)",
-            (data.name, data.type_id, data.description, json.dumps(data.metadata), data.date),
+            "INSERT INTO nodes (name, type_id, graph_id, description, metadata, date) VALUES (?, ?, ?, ?, ?, ?)",
+            (data.name, data.type_id, data.graph_id, data.description, json.dumps(data.metadata), data.date),
         )
         node_id = cur.lastrowid
         for tag_id in (data.tag_ids or []):

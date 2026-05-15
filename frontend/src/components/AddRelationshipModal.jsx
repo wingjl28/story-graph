@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
+import { Icon } from '@iconify/react'
 import { api } from '../api'
 
 export default function AddRelationshipModal({ nodes, sourceId, sourceIds, existingLabels, existingMetaKeys, onSave, onClose }) {
@@ -16,6 +17,20 @@ export default function AddRelationshipModal({ nodes, sourceId, sourceIds, exist
   const [error, setError] = useState(null)
   const [sourceSearch, setSourceSearch] = useState('')
   const [targetSearch, setTargetSearch] = useState('')
+  const [pos, setPos] = useState(null)
+  const modalRef = useRef(null)
+
+  const onHeaderMouseDown = (e) => {
+    if (e.target.closest('button, input, select, textarea, label')) return
+    e.preventDefault()
+    const rect = modalRef.current.getBoundingClientRect()
+    const offX = e.clientX - rect.left
+    const offY = e.clientY - rect.top
+    const onMove = (e) => setPos({ x: e.clientX - offX, y: e.clientY - offY })
+    const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
 
   const addKv = () => setKvPairs((p) => [...p, { k: '', v: '' }])
   const removeKv = (i) => setKvPairs((p) => p.filter((_, idx) => idx !== i))
@@ -112,13 +127,18 @@ export default function AddRelationshipModal({ nodes, sourceId, sourceIds, exist
 
   const canSave = sources.length > 0 && targets.length > 0 && label.trim()
 
+  const modalStyle = pos
+    ? { position: 'fixed', top: pos.y, left: pos.x, transform: 'none' }
+    : {}
+
   return (
-    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal modal-lg">
-        <div className="modal-header">
-          <span className="modal-title">Add Relationship</span>
-          <button className="panel-close" onClick={onClose}>×</button>
-        </div>
+    <div ref={modalRef} className="modal modal-lg floating-modal" style={modalStyle}>
+      <div className="modal-header panel-drag-handle" onMouseDown={onHeaderMouseDown} style={{ cursor: 'grab' }}>
+        <span className="modal-title">Add Relationship</span>
+        <button className="panel-close" onClick={onClose} title="Close">
+          <Icon icon="carbon:close" width={18} />
+        </button>
+      </div>
 
         <form onSubmit={(e) => { e.preventDefault(); doSave(false) }}>
           <div className="modal-body">
@@ -241,7 +261,6 @@ export default function AddRelationshipModal({ nodes, sourceId, sourceIds, exist
             </button>
           </div>
         </form>
-      </div>
     </div>
   )
 }

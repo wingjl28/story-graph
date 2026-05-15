@@ -79,6 +79,15 @@ const CY_STYLE = [
   },
 ]
 
+const POSITIONS_KEY = (graphId) => `sg-positions-${graphId}`
+
+const loadSavedPositions = (graphId) => {
+  try { return JSON.parse(localStorage.getItem(POSITIONS_KEY(graphId)) || '{}') } catch { return {} }
+}
+const savePositions = (graphId, positions) => {
+  try { localStorage.setItem(POSITIONS_KEY(graphId), JSON.stringify(positions)) } catch {}
+}
+
 const GraphView = forwardRef(function GraphView(
   {
     graphData, onNodeClick, onEdgeClick, onBgClick,
@@ -86,12 +95,13 @@ const GraphView = forwardRef(function GraphView(
     selectedId, focusNodeId, onFocusConsumed,
     hiddenNodeIds, hiddenEdgeIds,
     onSelectionChange, selectionMode, multiSelectActive,
-    onBoxSelectDone,
+    onBoxSelectDone, graphId,
   },
   ref,
 ) {
   const containerRef = useRef(null)
   const cy = useRef(null)
+  const graphIdRef = useRef(graphId)
 
   // Stable refs for callbacks so the init effect never re-runs
   const onNodeClickRef = useRef(onNodeClick)
@@ -106,6 +116,7 @@ const GraphView = forwardRef(function GraphView(
   const boxSelectTimerRef = useRef(null)
   const pendingPositionsRef = useRef(new Map())
 
+  useEffect(() => { graphIdRef.current = graphId }, [graphId])
   useEffect(() => { onNodeClickRef.current = onNodeClick }, [onNodeClick])
   useEffect(() => { onEdgeClickRef.current = onEdgeClick }, [onEdgeClick])
   useEffect(() => { onBgClickRef.current = onBgClick }, [onBgClick])
@@ -179,6 +190,16 @@ const GraphView = forwardRef(function GraphView(
       onBgRightClickRef.current?.(clientX, clientY, graphX, graphY)
     })
 
+    // Save positions on drag end
+    cy.current.on('dragfree', 'node', () => {
+      const positions = {}
+      cy.current.nodes().forEach((n) => {
+        const p = n.position()
+        positions[n.id()] = { x: p.x, y: p.y }
+      })
+      savePositions(graphIdRef.current, positions)
+    })
+
     // Box-select: debounce select events to read final selection
     cy.current.on('select unselect', 'node', () => {
       if (selectionModeRef.current !== 'box') return
@@ -249,8 +270,17 @@ const GraphView = forwardRef(function GraphView(
     cy.current.add(graphData.edges)
 
     if (isInitialLoad && cy.current.nodes().length > 0) {
-      cy.current.layout(LAYOUT_OPTS).run()
-      cy.current.fit(undefined, 50)
+      const saved = loadSavedPositions(graphIdRef.current)
+      const hasSaved = Object.keys(saved).length > 0
+      if (hasSaved) {
+        cy.current.nodes().forEach((n) => {
+          if (saved[n.id()]) n.position(saved[n.id()])
+        })
+        cy.current.fit(undefined, 50)
+      } else {
+        cy.current.layout(LAYOUT_OPTS).run()
+        cy.current.fit(undefined, 50)
+      }
     }
   }, [graphData])
 
