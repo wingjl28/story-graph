@@ -1,0 +1,20 @@
+{
+  "name": "story-graph-infra",
+  "version": "0.1.0",
+  "bin": { "story-graph": "bin/story-graph.js" },
+  "scripts": {
+    "build": "tsc",
+    "synth": "cdk synth",
+    "deploy": "cdk deploy"
+  },
+  "devDependencies": {
+    "aws-cdk": "2.160.0",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.5.4",
+    "@types/node": "^20.14.0"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.160.0",
+    "constructs": "^10.3.0"
+  }
+}

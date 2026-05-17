@@ -1,0 +1,15 @@
+.venv
+**/__pycache__
+**/*.pyc
+frontend/node_modules
+frontend/dist
+*.db
+.git
+.gitignore
+archive
+*.md
+infra/cdk.out
+infra/node_modules
+start.bat
+start.ps1
+dev.bat
