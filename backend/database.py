@@ -1,119 +1,117 @@
-import sqlite3
-from pathlib import Path
+"""SQLAlchemy engine, session factory, and FastAPI dependency for story-graph.
 
-DB_PATH = Path(__file__).parent.parent / "story_graph.db"
+Environment variables (set by CDK / SSM in production):
+  DB_HOST        - PostgreSQL host (required in prod)
+  DB_PORT        - PostgreSQL port (default: 5432)
+  DB_NAME        - Database name  (default: storygraph)
+  DB_USER        - DB user        (default: postgres)
+  DB_PASSWORD    - DB password    (default: postgres)
+  DB_SSLMODE     - SSL mode       (default: require)
 
-DEFAULT_TYPES = [
-    ("Character", "#e74c3c", "A person or being in a story"),
-    ("Location", "#27ae60", "A place in a story"),
-    ("Event", "#f39c12", "A significant occurrence"),
-    ("Item", "#8e44ad", "An object of significance"),
-    ("Faction", "#1abc9c", "A group or organization"),
-    ("Concept", "#7f8c8d", "An idea, theme, or abstract element"),
-    ("Book", "#2980b9", "A written work"),
-    ("Movie", "#c0392b", "A film"),
-    ("TV Show", "#16a085", "A television series"),
-    ("Game", "#d35400", "A video or tabletop game"),
-]
-
-SCHEMA = """
-PRAGMA foreign_keys = ON;
-
-CREATE TABLE IF NOT EXISTS story_graphs (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    title       TEXT    NOT NULL DEFAULT 'My Story',
-    description TEXT,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS node_types (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    name         TEXT    NOT NULL UNIQUE,
-    color        TEXT    NOT NULL DEFAULT '#6366f1',
-    description  TEXT,
-    is_date_type INTEGER NOT NULL DEFAULT 0,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS nodes (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT    NOT NULL,
-    type_id     INTEGER NOT NULL REFERENCES node_types(id),
-    graph_id    INTEGER NOT NULL DEFAULT 1 REFERENCES story_graphs(id) ON DELETE CASCADE,
-    description TEXT,
-    metadata    TEXT    NOT NULL DEFAULT '{}',
-    date        TEXT,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS relationships (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    source_id   INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-    target_id   INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-    label       TEXT    NOT NULL,
-    notes       TEXT,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS rel_types (
-    label TEXT PRIMARY KEY,
-    color TEXT NOT NULL DEFAULT '#4a5568'
-);
-
-CREATE TABLE IF NOT EXISTS tags (
-    id    INTEGER PRIMARY KEY AUTOINCREMENT,
-    name  TEXT NOT NULL UNIQUE,
-    color TEXT NOT NULL DEFAULT '#a78bfa'
-);
-
-CREATE TABLE IF NOT EXISTS node_tags (
-    node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-    tag_id  INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-    PRIMARY KEY (node_id, tag_id)
-);
+If DB_HOST is unset the module falls back to a local-dev URL so it can be
+imported without crashing during development.
 """
 
+import os
+from typing import Generator
 
-def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+
+# ---------------------------------------------------------------------------
+# Build the connection URL
+# ---------------------------------------------------------------------------
+
+_host = os.environ.get("DB_HOST")
+
+if _host:
+    _port = os.environ.get("DB_PORT", "5432")
+    _name = os.environ.get("DB_NAME", "storygraph")
+    _user = os.environ.get("DB_USER", "postgres")
+    _password = os.environ.get("DB_PASSWORD", "postgres")
+    _sslmode = os.environ.get("DB_SSLMODE", "require")
+    DATABASE_URL = (
+        f"postgresql+psycopg://{_user}:{_password}@{_host}:{_port}/{_name}"
+        f"?sslmode={_sslmode}"
+    )
+else:
+    # Local development fallback — no crash on import when no DB env vars set.
+    DATABASE_URL = "postgresql+psycopg://postgres:postgres@localhost:5432/storygraph"
+
+# ---------------------------------------------------------------------------
+# Engine
+# ---------------------------------------------------------------------------
+
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=5,
+    max_overflow=5,
+    pool_pre_ping=True,
+    future=True,
+)
+
+# ---------------------------------------------------------------------------
+# Session factory
+# ---------------------------------------------------------------------------
+
+SessionLocal = sessionmaker(
+    bind=engine,
+    autoflush=False,
+    expire_on_commit=False,
+)
+
+# ---------------------------------------------------------------------------
+# FastAPI dependency
+# ---------------------------------------------------------------------------
+
+
+def get_session() -> Generator[Session, None, None]:
+    """Yield a SQLAlchemy Session; always closed in finally."""
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Alembic-driven schema initialisation
+# ---------------------------------------------------------------------------
 
 
 def init_db() -> None:
-    conn = get_db()
-    conn.executescript(SCHEMA)
+    """Run 'alembic upgrade head' at app startup.
 
-    # Migrations for existing databases
-    for migration in [
-        "ALTER TABLE relationships ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'",
-        "ALTER TABLE node_types ADD COLUMN is_date_type INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE nodes ADD COLUMN date TEXT",
-        "CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, color TEXT NOT NULL DEFAULT '#a78bfa')",
-        "CREATE TABLE IF NOT EXISTS node_tags (node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE, PRIMARY KEY (node_id, tag_id))",
-        "CREATE TABLE IF NOT EXISTS story_graphs (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL DEFAULT 'My Story', description TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
-        "INSERT OR IGNORE INTO story_graphs (id, title) VALUES (1, 'My Story')",
-        "ALTER TABLE nodes ADD COLUMN graph_id INTEGER NOT NULL DEFAULT 1",
-        "ALTER TABLE node_types ADD COLUMN font_color TEXT",
-        "ALTER TABLE node_types ADD COLUMN scope TEXT DEFAULT 'shared'",
-        "ALTER TABLE node_types ADD COLUMN graph_id INTEGER",
-        "UPDATE node_types SET scope = 'shared' WHERE scope IS NULL",
-        "ALTER TABLE tags ADD COLUMN scope TEXT DEFAULT 'shared'",
-        "ALTER TABLE tags ADD COLUMN graph_id INTEGER",
-        "UPDATE tags SET scope = 'shared' WHERE scope IS NULL",
-    ]:
-        try:
-            conn.execute(migration)
-            conn.commit()
-        except Exception:
-            pass  # column already exists
+    Called from backend/main.py lifespan (no args, returns None).
+    Raises RuntimeError with a clear message if the DB is unreachable or
+    migrations fail.
+    """
+    try:
+        from alembic import command
+        from alembic.config import Config
 
-    count = conn.execute("SELECT COUNT(*) FROM node_types").fetchone()[0]
-    if count == 0:
-        conn.executemany(
-            "INSERT INTO node_types (name, color, description) VALUES (?, ?, ?)",
-            DEFAULT_TYPES,
-        )
-    conn.commit()
-    conn.close()
+        import pathlib
+        # alembic.ini lives at the repo root (parent of the backend package)
+        _ini = pathlib.Path(__file__).parent.parent / "alembic.ini"
+        cfg = Config(str(_ini))
+        command.upgrade(cfg, "head")
+    except Exception as exc:
+        raise RuntimeError(
+            f"Database initialisation via Alembic failed: {exc}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Re-export Base for convenience
+# ---------------------------------------------------------------------------
+
+from backend.db_models import Base  # noqa: E402  (circular-safe, models has no db import)
+
+__all__ = [
+    "engine",
+    "SessionLocal",
+    "get_session",
+    "init_db",
+    "Base",
+    "DATABASE_URL",
+]
