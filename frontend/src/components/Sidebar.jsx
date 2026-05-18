@@ -54,6 +54,9 @@ export default function Sidebar({
   onNewGraph,
   onRenameGraph,
   onDeleteGraph,
+  onShare,
+  userEmail,
+  onSignOut,
 }) {
   const [collapsed, setCollapsed] = useState({ filter: false, nodes: false, rels: false, types: false, tags: false })
   const [sort, setSort] = useState({ nodes: 'alpha', rels: 'alpha', types: 'alpha', tags: 'alpha' })
@@ -132,6 +135,11 @@ export default function Sidebar({
           <button className="sidebar-icon-btn" onClick={onNewGraph} title="New story graph">
             <Icon icon="carbon:add" width={15} />
           </button>
+          {onShare && (
+            <button className="sidebar-icon-btn" onClick={onShare} title="Share story graph">
+              <Icon icon="carbon:share" width={15} />
+            </button>
+          )}
         </div>
       )}
 
@@ -350,6 +358,17 @@ export default function Sidebar({
           </Section>
         )}
       </div>
+
+      {(userEmail || onSignOut) && (
+        <div className="sidebar-user-footer">
+          {userEmail && <span className="sidebar-user-email" title={userEmail}>{userEmail}</span>}
+          {onSignOut && (
+            <button className="sidebar-meta-link" onClick={onSignOut} title="Sign out">
+              Sign out
+            </button>
+          )}
+        </div>
+      )}
     </aside>
   )
 }

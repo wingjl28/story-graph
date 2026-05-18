@@ -1,10 +1,30 @@
 const BASE = '/api'
 
+let _authToken = null
+let _onAuthError = null
+
+export function setAuthToken(token) {
+  _authToken = token
+}
+
+export function setOnAuthError(cb) {
+  _onAuthError = cb
+}
+
 async function req(url, options = {}) {
+  const headers = { 'Content-Type': 'application/json' }
+  if (_authToken) {
+    headers['Authorization'] = `Bearer ${_authToken}`
+  }
   const res = await fetch(BASE + url, {
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     ...options,
   })
+  if (res.status === 401) {
+    if (_onAuthError) _onAuthError()
+    const body = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(body.detail || 'Unauthorized')
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(body.detail || 'Request failed')
@@ -15,6 +35,7 @@ async function req(url, options = {}) {
 const get = (url) => req(url)
 const post = (url, data) => req(url, { method: 'POST', body: JSON.stringify(data) })
 const put = (url, data) => req(url, { method: 'PUT', body: JSON.stringify(data) })
+const patch = (url, data) => req(url, { method: 'PATCH', body: JSON.stringify(data) })
 const del = (url) => req(url, { method: 'DELETE' })
 
 export const api = {
@@ -59,4 +80,11 @@ export const api = {
   createStoryGraph: (data) => post('/story-graphs', data),
   updateStoryGraph: (id, data) => put(`/story-graphs/${id}`, data),
   deleteStoryGraph: (id) => del(`/story-graphs/${id}`),
+
+  // Collaborators
+  getCollaborators: (gid) => get(`/story-graphs/${gid}/collaborators`),
+  inviteCollaborator: (gid, body) => post(`/story-graphs/${gid}/collaborators`, body),
+  updateCollaboratorRole: (gid, userId, body) => patch(`/story-graphs/${gid}/collaborators/${userId}`, body),
+  removeCollaborator: (gid, userId) => del(`/story-graphs/${gid}/collaborators/${userId}`),
+  revokeInvite: (gid, email) => del(`/story-graphs/${gid}/invites?email=${encodeURIComponent(email)}`),
 }

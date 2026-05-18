@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useAuth } from 'react-oidc-context'
 import GraphView from './components/GraphView'
 import Sidebar from './components/Sidebar'
 import NodePanel from './components/NodePanel'
@@ -10,11 +11,45 @@ import MultiSelectPanel from './components/MultiSelectPanel'
 import ContextMenu from './components/ContextMenu'
 import Timeline from './components/Timeline'
 import QuickTagMenu from './components/QuickTagMenu'
-import { api } from './api'
+import LoginGate from './components/LoginGate'
+import ShareDialog from './components/ShareDialog'
+import { api, setAuthToken, setOnAuthError } from './api'
+import { AUTH_ENABLED } from './auth/authConfig.js'
 import { wildcardMatch } from './utils'
 import './App.css'
 
+/**
+ * AuthBridge: only rendered when AUTH_ENABLED (i.e. inside AuthProvider).
+ * Wires the OIDC user's id_token into api.js and registers the 401 handler.
+ * Passes auth state back up via callback props so App can use it.
+ */
+function AuthBridge({ onUserChange }) {
+  const auth = useAuth()
+
+  useEffect(() => {
+    setAuthToken(auth.user?.id_token ?? null)
+    onUserChange(auth.user ?? null, auth)
+  }, [auth.user]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setOnAuthError(() => auth.signinRedirect())
+    return () => setOnAuthError(null)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return null
+}
+
 export default function App() {
+  const [authUser, setAuthUser] = useState(null)
+  const [authObj, setAuthObj] = useState(null)
+
+  const handleUserChange = useCallback((user, auth) => {
+    setAuthUser(user)
+    setAuthObj(auth)
+  }, [])
+
+  const [showShareDialog, setShowShareDialog] = useState(false)
+
   const [nodeTypes, setNodeTypes] = useState([])
   const [graphData, setGraphData] = useState({ nodes: [], edges: [] })
   const [selected, setSelected] = useState(null)
@@ -449,7 +484,9 @@ export default function App() {
   const ctxIsHidden = ctxIsNode && hiddenNodeIds.has(String(ctxData?.id))
 
   return (
-    <div className="app">
+    <LoginGate>
+      {AUTH_ENABLED && <AuthBridge onUserChange={handleUserChange} />}
+      <div className="app">
       {sidebarOpen && (
         <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
       )}
@@ -493,6 +530,9 @@ export default function App() {
         onNewGraph={handleNewGraph}
         onRenameGraph={handleRenameGraph}
         onDeleteGraph={handleDeleteGraph}
+        onShare={() => setShowShareDialog(true)}
+        userEmail={AUTH_ENABLED ? authUser?.profile?.email : undefined}
+        onSignOut={AUTH_ENABLED ? () => authObj?.removeUser() : undefined}
       />
 
       <main className="graph-area">
@@ -701,6 +741,14 @@ export default function App() {
           />
         )
       })()}
-    </div>
+
+      {showShareDialog && (
+        <ShareDialog
+          graphId={activeGraphId}
+          onClose={() => setShowShareDialog(false)}
+        />
+      )}
+      </div>
+    </LoginGate>
   )
 }

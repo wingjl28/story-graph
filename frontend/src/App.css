@@ -1419,3 +1419,207 @@ input[type='color'] {
   white-space: nowrap;
   opacity: 0.92;
 }
+
+/* ── LoginGate ───────────────────────────────────────────── */
+.login-gate-center {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0f1117;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.login-gate-card {
+  background: #1a1f2e;
+  border: 1px solid #2d3748;
+  border-radius: 12px;
+  padding: 40px 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-width: 280px;
+}
+
+.login-gate-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #a78bfa;
+  margin: 0;
+}
+
+.login-gate-subtitle {
+  font-size: 14px;
+  color: #718096;
+  margin: 0 0 8px;
+}
+
+.login-gate-btn {
+  width: 100%;
+  padding: 10px 24px;
+  font-size: 15px;
+}
+
+.login-gate-error {
+  color: #fc8181;
+  font-size: 14px;
+  margin: 0;
+}
+
+/* ── ShareDialog ─────────────────────────────────────────── */
+.share-dialog {
+  width: 480px;
+}
+
+.share-section {
+  margin-bottom: 20px;
+}
+
+.share-section:last-child {
+  margin-bottom: 0;
+}
+
+.share-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #718096;
+  margin-bottom: 8px;
+}
+
+.share-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid #1e2535;
+}
+
+.share-row:last-child {
+  border-bottom: none;
+}
+
+.share-email {
+  flex: 1;
+  font-size: 13px;
+  color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-email--pending {
+  color: #718096;
+  font-style: italic;
+}
+
+.share-role-badge {
+  font-size: 11px;
+  background: #2d3748;
+  color: #a0aec0;
+  border-radius: 4px;
+  padding: 2px 7px;
+  flex-shrink: 0;
+}
+
+.share-role-badge--pending {
+  background: #1e2535;
+  color: #718096;
+}
+
+.share-role-select {
+  background: #0f1117;
+  border: 1px solid #2d3748;
+  color: #e2e8f0;
+  border-radius: 5px;
+  padding: 3px 6px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.share-role-select:focus { outline: none; border-color: #6366f1; }
+.share-role-select option { background: #1a1f2e; }
+
+.share-remove-btn {
+  background: none;
+  border: 1px solid #3d2d2d;
+  color: #fc8181;
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-family: inherit;
+}
+.share-remove-btn:hover { background: #3d2d2d; }
+
+.share-invite-form {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.share-invite-input {
+  flex: 1;
+  min-width: 160px;
+  background: #0f1117;
+  border: 1px solid #2d3748;
+  color: #e2e8f0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.share-invite-input::placeholder { color: #4a5568; }
+.share-invite-input:focus { outline: none; border-color: #6366f1; }
+
+.share-invite-btn {
+  flex-shrink: 0;
+}
+
+.share-error {
+  color: #fc8181;
+  font-size: 13px;
+  padding: 8px 12px;
+  background: #2d1f1f;
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.share-error--inline {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+.share-loading {
+  color: #718096;
+  font-size: 13px;
+}
+
+/* ── Sidebar user footer ─────────────────────────────────── */
+.sidebar-user-footer {
+  padding: 10px 12px;
+  border-top: 1px solid #2d3748;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 260px;
+  flex-shrink: 0;
+}
+
+.sidebar-user-email {
+  font-size: 11px;
+  color: #4a5568;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
