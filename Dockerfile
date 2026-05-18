@@ -6,6 +6,19 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm install
 COPY frontend/ ./
+# Cognito config is baked into the SPA at build time (Vite inlines VITE_*).
+# Pass via: docker build --build-arg VITE_COGNITO_AUTHORITY=... \
+#   --build-arg VITE_COGNITO_CLIENT_ID=...
+# Left blank => frontend runs in dev/no-auth mode (matches backend with
+# COGNITO_USER_POOL_ID unset).
+ARG VITE_COGNITO_AUTHORITY=""
+ARG VITE_COGNITO_CLIENT_ID=""
+ARG VITE_COGNITO_REDIRECT_URI=""
+ARG VITE_COGNITO_SCOPE=""
+ENV VITE_COGNITO_AUTHORITY=$VITE_COGNITO_AUTHORITY \
+    VITE_COGNITO_CLIENT_ID=$VITE_COGNITO_CLIENT_ID \
+    VITE_COGNITO_REDIRECT_URI=$VITE_COGNITO_REDIRECT_URI \
+    VITE_COGNITO_SCOPE=$VITE_COGNITO_SCOPE
 RUN npm run build
 
 # Stage 2: Build and run backend

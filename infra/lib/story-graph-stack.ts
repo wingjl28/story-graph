@@ -5,6 +5,7 @@ import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as apprunner from '@aws-cdk/aws-apprunner-alpha';
 
 /**
@@ -144,6 +145,31 @@ export class StoryGraphStack extends cdk.Stack {
     const msClientSecret =
       '{{resolve:ssm-secure:/storygraph/oauth/microsoft/client_secret}}';
 
+    // Pre-Sign-up Lambda — auto-confirm + auto-verify email for FEDERATED
+    // sign-ups ONLY (triggerSource PreSignUp_ExternalProvider). This closes
+    // the Phase-2/Phase-4 follow-up: Cognito L2 attributeMapping cannot map
+    // email_verified, so without this an Apple/Microsoft user's ID token
+    // arrives with email_verified=false and the backend (correctly) 401s.
+    // We only trust an IdP-asserted email that is actually present; we do
+    // NOT auto-verify non-federated paths (self sign-up is disabled anyway).
+    const preSignUpFn = new lambda.Function(this, 'PreSignUpFn', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      timeout: cdk.Duration.seconds(5),
+      code: lambda.Code.fromInline(
+        [
+          'exports.handler = async (event) => {',
+          "  if (event.triggerSource === 'PreSignUp_ExternalProvider') {",
+          '    event.response.autoConfirmUser = true;',
+          '    const attrs = event.request.userAttributes || {};',
+          '    if (attrs.email) { event.response.autoVerifyEmail = true; }',
+          '  }',
+          '  return event;',
+          '};',
+        ].join('\n'),
+      ),
+    });
+
     const userPool = new cognito.UserPool(this, 'UserPool', {
       selfSignUpEnabled: false,
       signInAliases: { email: true },
@@ -153,6 +179,7 @@ export class StoryGraphStack extends cdk.Stack {
       autoVerify: { email: true },
       mfa: cognito.Mfa.OPTIONAL,
       advancedSecurityMode: cognito.AdvancedSecurityMode.AUDIT,
+      lambdaTriggers: { preSignUp: preSignUpFn },
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
