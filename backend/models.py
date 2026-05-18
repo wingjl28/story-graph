@@ -23,24 +23,25 @@ class NodeTag(BaseModel):
     name: str
     color: str
 
+# graph_id in HTTP request/response maps to story_graph_id in DB
 class TagCreate(BaseModel):
     name: str
     color: str = '#a78bfa'
     scope: str = 'shared'
-    graph_id: Optional[int] = None
+    graph_id: Optional[int] = None  # HTTP param; maps to story_graph_id in DB
 
 class TagUpdate(BaseModel):
     name: Optional[str] = None
     color: Optional[str] = None
     scope: Optional[str] = None
-    graph_id: Optional[int] = None
+    graph_id: Optional[int] = None  # HTTP param; maps to story_graph_id in DB
 
 class Tag(BaseModel):
     id: int
     name: str
     color: str
     scope: str = 'shared'
-    graph_id: Optional[int] = None
+    graph_id: Optional[int] = None  # HTTP param; maps to story_graph_id in DB
     count: int
 
 
@@ -51,7 +52,7 @@ class NodeTypeCreate(BaseModel):
     description: Optional[str] = None
     is_date_type: bool = False
     scope: str = 'shared'
-    graph_id: Optional[int] = None
+    graph_id: Optional[int] = None  # HTTP param; maps to story_graph_id in DB
 
 
 class NodeTypeUpdate(BaseModel):
@@ -61,7 +62,7 @@ class NodeTypeUpdate(BaseModel):
     description: Optional[str] = None
     is_date_type: Optional[bool] = None
     scope: Optional[str] = None
-    graph_id: Optional[int] = None
+    graph_id: Optional[int] = None  # HTTP param; maps to story_graph_id in DB
 
 
 class NodeType(BaseModel):
@@ -72,14 +73,14 @@ class NodeType(BaseModel):
     description: Optional[str] = None
     is_date_type: bool = False
     scope: str = 'shared'
-    graph_id: Optional[int] = None
+    graph_id: Optional[int] = None  # HTTP param; maps to story_graph_id in DB
     created_at: datetime
 
 
 class NodeCreate(BaseModel):
     name: str
     type_id: int
-    graph_id: int = 1
+    graph_id: int = 1  # HTTP param; maps to story_graph_id in DB
     description: Optional[str] = None
     metadata: Dict[str, Any] = {}
     date: Optional[str] = None
@@ -99,7 +100,7 @@ class Node(BaseModel):
     id: int
     name: str
     type_id: int
-    graph_id: int = 1
+    graph_id: int = 1  # HTTP key; maps to story_graph_id in DB
     type_name: str
     type_color: str
     type_is_date_type: bool

@@ -1,84 +1,97 @@
-import json
-from fastapi import APIRouter
-from ..database import get_db
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+
+from ..database import get_session
+from ..db_models import (
+    Node as NodeORM,
+    NodeType as NodeTypeORM,
+    NodeTag as NodeTagORM,
+    Tag as TagORM,
+    Relationship as RelationshipORM,
+    RelType as RelTypeORM,
+)
+from ..auth import get_current_uid, assert_story_access
 
 router = APIRouter(prefix="/graph", tags=["graph"])
 
 
-def _parse_tags(tags_raw):
-    if not tags_raw:
-        return []
-    result = []
-    for part in tags_raw.split('|'):
-        pieces = part.split(':', 2)
-        if len(pieces) == 3:
-            result.append({'id': int(pieces[0]), 'name': pieces[1], 'color': pieces[2]})
-    return result
+def _parse_tags(session, node_id: int) -> list:
+    rows = session.execute(
+        select(TagORM).join(NodeTagORM, TagORM.id == NodeTagORM.tag_id).where(
+            NodeTagORM.node_id == node_id
+        )
+    ).scalars().all()
+    return [{"id": t.id, "name": t.name, "color": t.color} for t in rows]
 
 
 @router.get("")
-def get_graph(graph_id: int = 1):
-    conn = get_db()
-    nodes = conn.execute("""
-        SELECT n.id, n.name, n.description, n.metadata, n.date, n.graph_id,
-               nt.name AS type_name, nt.color AS type_color, nt.id AS type_id,
-               nt.is_date_type, nt.font_color,
-               GROUP_CONCAT(t.id || ':' || t.name || ':' || t.color, '|') AS tags_raw
-        FROM nodes n
-        JOIN node_types nt ON n.type_id = nt.id
-        LEFT JOIN node_tags ntj ON n.id = ntj.node_id
-        LEFT JOIN tags t ON ntj.tag_id = t.id
-        WHERE n.graph_id = ?
-        GROUP BY n.id
-    """, (graph_id,)).fetchall()
-    edges = conn.execute("""
-        SELECT r.id, r.source_id, r.target_id, r.label, r.notes, r.metadata,
-               sn.name AS source_name, tn.name AS target_name,
-               COALESCE(rt.color, '#4a5568') AS rel_color
-        FROM relationships r
-        JOIN nodes sn ON r.source_id = sn.id
-        JOIN nodes tn ON r.target_id = tn.id
-        LEFT JOIN rel_types rt ON r.label = rt.label
-        WHERE sn.graph_id = ?
-    """, (graph_id,)).fetchall()
-    conn.close()
+def get_graph(
+    graph_id: int = 1,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
+    assert_story_access(session, graph_id, uid, "viewer")
+
+    nodes = session.execute(
+        select(NodeORM, NodeTypeORM)
+        .join(NodeTypeORM, NodeORM.type_id == NodeTypeORM.id)
+        .where(NodeORM.story_graph_id == graph_id)
+    ).all()
+
+    rels = session.execute(
+        select(RelationshipORM)
+        .join(NodeORM, RelationshipORM.source_id == NodeORM.id)
+        .where(NodeORM.story_graph_id == graph_id)
+    ).scalars().all()
+
+    # Build rel_color lookup for this story
+    rel_type_rows = session.execute(
+        select(RelTypeORM).where(RelTypeORM.story_graph_id == graph_id)
+    ).scalars().all()
+    rel_color_map = {rt.label: rt.color for rt in rel_type_rows}
 
     cy_nodes = [
         {
             "data": {
-                "id": str(n["id"]),
-                "label": n["name"],
-                "type": n["type_name"],
-                "type_id": n["type_id"],
-                "color": n["type_color"],
-                "font_color": n["font_color"],
-                "description": n["description"],
-                "metadata": json.loads(n["metadata"] or "{}"),
-                "date": n["date"],
-                "graph_id": n["graph_id"],
-                "is_date_type": bool(n["is_date_type"]),
-                "tags": _parse_tags(n["tags_raw"]),
+                "id": str(n.id),
+                "label": n.name,
+                "type": nt.name,
+                "type_id": nt.id,
+                "color": nt.color,
+                "font_color": nt.font_color,
+                "description": n.description,
+                "metadata": n.meta,  # ORM attr is meta; JSON key is metadata
+                "date": n.date,
+                "graph_id": n.story_graph_id,  # HTTP key stays graph_id
+                "is_date_type": bool(nt.is_date_type),
+                "tags": _parse_tags(session, n.id),
             }
         }
-        for n in nodes
+        for n, nt in nodes
     ]
 
-    cy_edges = [
-        {
-            "data": {
-                "id": f"e{e['id']}",
-                "source": str(e["source_id"]),
-                "target": str(e["target_id"]),
-                "source_name": e["source_name"],
-                "target_name": e["target_name"],
-                "label": e["label"],
-                "color": e["rel_color"],
-                "notes": e["notes"],
-                "rel_id": e["id"],
-                "metadata": json.loads(e["metadata"] or "{}"),
+    # Build target node lookup to get target story_graph_id membership
+    cy_edges = []
+    for r in rels:
+        tgt = session.get(NodeORM, r.target_id)
+        cy_edges.append(
+            {
+                "data": {
+                    "id": f"e{r.id}",
+                    "source": str(r.source_id),
+                    "target": str(r.target_id),
+                    "source_name": next(
+                        (n.name for n, _ in nodes if n.id == r.source_id), ""
+                    ),
+                    "target_name": tgt.name if tgt else "",
+                    "label": r.label,
+                    "color": rel_color_map.get(r.label, '#4a5568'),
+                    "notes": r.notes,
+                    "rel_id": r.id,
+                    "metadata": r.meta,  # ORM attr is meta; JSON key is metadata
+                }
             }
-        }
-        for e in edges
-    ]
+        )
 
     return {"nodes": cy_nodes, "edges": cy_edges}

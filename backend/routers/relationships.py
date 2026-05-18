@@ -1,8 +1,17 @@
-import json
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import List
-from ..database import get_db
+from sqlalchemy.orm import Session
+from sqlalchemy import select, func
+
+from ..database import get_session
+from ..db_models import (
+    Node as NodeORM,
+    NodeType as NodeTypeORM,
+    Relationship as RelationshipORM,
+    RelType as RelTypeORM,
+)
 from ..models import RelationshipCreate, RelationshipUpdate, Relationship
+from ..auth import get_current_uid, assert_story_access
 
 router = APIRouter(prefix="/relationships", tags=["relationships"])
 
@@ -12,203 +21,301 @@ REL_PALETTE = [
     '#8bc34a', '#607d8b',
 ]
 
-REL_SELECT = """
-    SELECT r.*,
-        sn.name AS source_name, st.color AS source_type_color,
-        tn.name AS target_name, tt.color AS target_type_color,
-        COALESCE(rt.color, '#4a5568') AS rel_color
-    FROM relationships r
-    JOIN nodes sn ON r.source_id = sn.id
-    JOIN node_types st ON sn.type_id = st.id
-    JOIN nodes tn ON r.target_id = tn.id
-    JOIN node_types tt ON tn.type_id = tt.id
-    LEFT JOIN rel_types rt ON r.label = rt.label
-"""
-
 
 def _normalize(label: str) -> str:
     return label.strip().title()
 
 
-def _ensure_rel_type(conn, label: str) -> str:
-    row = conn.execute("SELECT color FROM rel_types WHERE label = ?", (label,)).fetchone()
-    if row:
-        return row["color"]
-    count = conn.execute("SELECT COUNT(*) FROM rel_types").fetchone()[0]
+def _get_rel_color(session: Session, story_graph_id: int, label: str) -> str:
+    rt = session.execute(
+        select(RelTypeORM).where(
+            RelTypeORM.story_graph_id == story_graph_id,
+            RelTypeORM.label == label,
+        )
+    ).scalar_one_or_none()
+    return rt.color if rt else '#4a5568'
+
+
+def _ensure_rel_type(session: Session, story_graph_id: int, label: str) -> str:
+    rt = session.execute(
+        select(RelTypeORM).where(
+            RelTypeORM.story_graph_id == story_graph_id,
+            RelTypeORM.label == label,
+        )
+    ).scalar_one_or_none()
+    if rt:
+        return rt.color
+    count = session.execute(
+        select(func.count()).select_from(RelTypeORM).where(
+            RelTypeORM.story_graph_id == story_graph_id
+        )
+    ).scalar_one()
     color = REL_PALETTE[count % len(REL_PALETTE)]
-    conn.execute("INSERT INTO rel_types (label, color) VALUES (?, ?)", (label, color))
+    session.add(RelTypeORM(story_graph_id=story_graph_id, label=label, color=color))
     return color
 
 
-def _row_to_rel(row) -> dict:
-    d = dict(row)
-    d["metadata"] = json.loads(d.get("metadata") or "{}")
-    return d
+def _orm_to_rel(session: Session, rel: RelationshipORM) -> dict:
+    src = session.get(NodeORM, rel.source_id)
+    tgt = session.get(NodeORM, rel.target_id)
+    src_nt = session.get(NodeTypeORM, src.type_id) if src else None
+    tgt_nt = session.get(NodeTypeORM, tgt.type_id) if tgt else None
+    story_graph_id = src.story_graph_id if src else None
+    rel_color = _get_rel_color(session, story_graph_id, rel.label) if story_graph_id else '#4a5568'
+    return {
+        "id": rel.id,
+        "source_id": rel.source_id,
+        "source_name": src.name if src else "",
+        "source_type_color": src_nt.color if src_nt else "#000",
+        "target_id": rel.target_id,
+        "target_name": tgt.name if tgt else "",
+        "target_type_color": tgt_nt.color if tgt_nt else "#000",
+        "label": rel.label,
+        "rel_color": rel_color,
+        "notes": rel.notes,
+        "metadata": rel.meta,  # ORM attr is meta; JSON key is metadata
+        "created_at": rel.created_at,
+    }
 
 
-def _check_duplicate(conn, source_id: int, target_id: int, label: str, exclude_id: int = None):
-    q = "SELECT id FROM relationships WHERE source_id=? AND target_id=? AND label=?"
-    params = [source_id, target_id, label]
+def _assert_rel_access(session: Session, rel: RelationshipORM, uid: int, min_role: str) -> int:
+    """Authorize on the relationship's TRUE story (derived from its source
+    node), never on a caller-supplied graph_id. Returns the story id.
+
+    Prevents cross-tenant IDOR: a caller cannot pass their own graph_id with
+    another tenant's rel_id. 404 (not 403) to avoid disclosing existence.
+    """
+    src = session.get(NodeORM, rel.source_id)
+    if src is None:
+        raise HTTPException(status_code=404, detail="Relationship not found")
+    sid = src.story_graph_id
+    assert_story_access(session, sid, uid, min_role)
+    return sid
+
+
+def _check_duplicate(
+    session: Session, source_id: int, target_id: int, label: str, exclude_id: int = None
+):
+    stmt = select(RelationshipORM).where(
+        RelationshipORM.source_id == source_id,
+        RelationshipORM.target_id == target_id,
+        RelationshipORM.label == label,
+    )
     if exclude_id is not None:
-        q += " AND id != ?"
-        params.append(exclude_id)
-    return conn.execute(q, params).fetchone()
+        stmt = stmt.where(RelationshipORM.id != exclude_id)
+    return session.execute(stmt).scalar_one_or_none()
 
 
 @router.get("", response_model=List[Relationship])
-def list_relationships():
-    conn = get_db()
-    rows = conn.execute(REL_SELECT + " ORDER BY r.created_at DESC").fetchall()
-    conn.close()
-    return [_row_to_rel(r) for r in rows]
+def list_relationships(
+    graph_id: int,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
+    assert_story_access(session, graph_id, uid, "viewer")
+    # Relationships scoped via source node's story_graph_id
+    rels = session.execute(
+        select(RelationshipORM)
+        .join(NodeORM, RelationshipORM.source_id == NodeORM.id)
+        .where(NodeORM.story_graph_id == graph_id)
+        .order_by(RelationshipORM.created_at.desc())
+    ).scalars().all()
+    return [_orm_to_rel(session, r) for r in rels]
 
 
 @router.post("", response_model=Relationship)
-def create_relationship(data: RelationshipCreate):
+def create_relationship(
+    data: RelationshipCreate,
+    graph_id: int,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
     label = _normalize(data.label)
     if not label:
         raise HTTPException(status_code=400, detail="Label cannot be empty")
 
-    conn = get_db()
+    assert_story_access(session, graph_id, uid, "editor")
+
+    # §5(3): source and target must belong to the same story
+    src = session.get(NodeORM, data.source_id)
+    tgt = session.get(NodeORM, data.target_id)
+    if not src or not tgt:
+        raise HTTPException(status_code=400, detail="Source or target node not found")
+    if src.story_graph_id != graph_id or tgt.story_graph_id != graph_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Source and target nodes must belong to this story",
+        )
+
     try:
-        if _check_duplicate(conn, data.source_id, data.target_id, label):
+        if _check_duplicate(session, data.source_id, data.target_id, label):
             raise HTTPException(
                 status_code=400,
                 detail=f'"{label}" already exists between these two nodes',
             )
-        _ensure_rel_type(conn, label)
-        cur = conn.execute(
-            "INSERT INTO relationships (source_id, target_id, label, notes, metadata) VALUES (?, ?, ?, ?, ?)",
-            (data.source_id, data.target_id, label, data.notes, json.dumps(data.metadata)),
+        _ensure_rel_type(session, graph_id, label)
+        rel = RelationshipORM(
+            source_id=data.source_id,
+            target_id=data.target_id,
+            label=label,
+            notes=data.notes,
+            meta=data.metadata,
         )
-        rel_id = cur.lastrowid
-        conn.commit()
-        row = conn.execute(REL_SELECT + " WHERE r.id = ?", (rel_id,)).fetchone()
-        return _row_to_rel(row)
+        session.add(rel)
+        session.commit()
+        session.refresh(rel)
+        return _orm_to_rel(session, rel)
     except HTTPException:
         raise
     except Exception as exc:
-        conn.rollback()
+        session.rollback()
         raise HTTPException(status_code=400, detail=str(exc))
-    finally:
-        conn.close()
 
 
 @router.get("/{rel_id}", response_model=Relationship)
-def get_relationship(rel_id: int):
-    conn = get_db()
-    row = conn.execute(REL_SELECT + " WHERE r.id = ?", (rel_id,)).fetchone()
-    conn.close()
-    if not row:
+def get_relationship(
+    rel_id: int,
+    graph_id: int,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
+    rel = session.get(RelationshipORM, rel_id)
+    if not rel:
         raise HTTPException(status_code=404, detail="Relationship not found")
-    return _row_to_rel(row)
+    _assert_rel_access(session, rel, uid, "viewer")
+    return _orm_to_rel(session, rel)
 
 
 @router.put("/{rel_id}", response_model=Relationship)
-def update_relationship(rel_id: int, data: RelationshipUpdate):
+def update_relationship(
+    rel_id: int,
+    data: RelationshipUpdate,
+    graph_id: int,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
     raw = data.model_dump(exclude_unset=True)
     if not raw:
         raise HTTPException(status_code=400, detail="No fields to update")
+
+    rel = session.get(RelationshipORM, rel_id)
+    if not rel:
+        raise HTTPException(status_code=404, detail="Relationship not found")
+    sid = _assert_rel_access(session, rel, uid, "editor")
 
     if "label" in raw:
         raw["label"] = _normalize(raw["label"])
         if not raw["label"]:
             raise HTTPException(status_code=400, detail="Label cannot be empty")
 
-    if "metadata" in raw:
-        raw["metadata"] = json.dumps(raw["metadata"] or {})
-
-    conn = get_db()
     try:
         if "label" in raw:
-            existing = conn.execute(REL_SELECT + " WHERE r.id = ?", (rel_id,)).fetchone()
-            if existing and _check_duplicate(conn, existing["source_id"], existing["target_id"], raw["label"], exclude_id=rel_id):
+            if _check_duplicate(session, rel.source_id, rel.target_id, raw["label"], exclude_id=rel_id):
                 raise HTTPException(
                     status_code=400,
                     detail=f'"{raw["label"]}" already exists between these two nodes',
                 )
-            _ensure_rel_type(conn, raw["label"])
+            _ensure_rel_type(session, sid, raw["label"])
 
-        set_clause = ", ".join(f"{k} = ?" for k in raw)
-        conn.execute(f"UPDATE relationships SET {set_clause} WHERE id = ?", [*raw.values(), rel_id])
-        conn.commit()
-        row = conn.execute(REL_SELECT + " WHERE r.id = ?", (rel_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Relationship not found")
-        return _row_to_rel(row)
+        for k, v in raw.items():
+            if k == "metadata":
+                rel.meta = v or {}
+            else:
+                setattr(rel, k, v)
+
+        session.commit()
+        session.refresh(rel)
+        return _orm_to_rel(session, rel)
     except HTTPException:
         raise
     except Exception as exc:
-        conn.rollback()
+        session.rollback()
         raise HTTPException(status_code=400, detail=str(exc))
-    finally:
-        conn.close()
 
 
 @router.post("/{rel_id}/toggle-bidirectional")
-def toggle_bidirectional(rel_id: int):
-    conn = get_db()
+def toggle_bidirectional(
+    rel_id: int,
+    graph_id: int,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
+    rel = session.get(RelationshipORM, rel_id)
+    if not rel:
+        raise HTTPException(status_code=404, detail="Relationship not found")
+    sid = _assert_rel_access(session, rel, uid, "editor")
+
     try:
-        row = conn.execute("SELECT * FROM relationships WHERE id = ?", (rel_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Relationship not found")
-        reverse = conn.execute(
-            "SELECT id FROM relationships WHERE source_id=? AND target_id=? AND label=?",
-            (row["target_id"], row["source_id"], row["label"]),
-        ).fetchone()
+        reverse = session.execute(
+            select(RelationshipORM).where(
+                RelationshipORM.source_id == rel.target_id,
+                RelationshipORM.target_id == rel.source_id,
+                RelationshipORM.label == rel.label,
+            )
+        ).scalar_one_or_none()
         if reverse:
-            conn.execute("DELETE FROM relationships WHERE id=?", (reverse["id"],))
-            conn.commit()
+            session.delete(reverse)
+            session.commit()
             return {"bidirectional": False}
         else:
-            _ensure_rel_type(conn, row["label"])
-            conn.execute(
-                "INSERT INTO relationships (source_id, target_id, label, notes, metadata) VALUES (?, ?, ?, ?, ?)",
-                (row["target_id"], row["source_id"], row["label"], row["notes"], row["metadata"]),
+            _ensure_rel_type(session, sid, rel.label)
+            rev_rel = RelationshipORM(
+                source_id=rel.target_id,
+                target_id=rel.source_id,
+                label=rel.label,
+                notes=rel.notes,
+                meta=rel.meta,
             )
-            conn.commit()
+            session.add(rev_rel)
+            session.commit()
             return {"bidirectional": True}
     except HTTPException:
         raise
     except Exception as exc:
-        conn.rollback()
+        session.rollback()
         raise HTTPException(status_code=400, detail=str(exc))
-    finally:
-        conn.close()
 
 
 @router.post("/{rel_id}/swap", response_model=Relationship)
-def swap_relationship_direction(rel_id: int):
-    conn = get_db()
+def swap_relationship_direction(
+    rel_id: int,
+    graph_id: int,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
+    rel = session.get(RelationshipORM, rel_id)
+    if not rel:
+        raise HTTPException(status_code=404, detail="Relationship not found")
+    _assert_rel_access(session, rel, uid, "editor")
+
     try:
-        row = conn.execute("SELECT * FROM relationships WHERE id = ?", (rel_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Relationship not found")
-        if _check_duplicate(conn, row["target_id"], row["source_id"], row["label"], exclude_id=rel_id):
+        if _check_duplicate(session, rel.target_id, rel.source_id, rel.label, exclude_id=rel_id):
             raise HTTPException(
                 status_code=400,
-                detail=f'"{row["label"]}" already exists in the reverse direction',
+                detail=f'"{rel.label}" already exists in the reverse direction',
             )
-        conn.execute(
-            "UPDATE relationships SET source_id=?, target_id=? WHERE id=?",
-            (row["target_id"], row["source_id"], rel_id),
-        )
-        conn.commit()
-        updated = conn.execute(REL_SELECT + " WHERE r.id = ?", (rel_id,)).fetchone()
-        return _row_to_rel(updated)
+        rel.source_id, rel.target_id = rel.target_id, rel.source_id
+        session.commit()
+        session.refresh(rel)
+        return _orm_to_rel(session, rel)
     except HTTPException:
         raise
     except Exception as exc:
-        conn.rollback()
+        session.rollback()
         raise HTTPException(status_code=400, detail=str(exc))
-    finally:
-        conn.close()
 
 
 @router.delete("/{rel_id}")
-def delete_relationship(rel_id: int):
-    conn = get_db()
-    conn.execute("DELETE FROM relationships WHERE id = ?", (rel_id,))
-    conn.commit()
-    conn.close()
+def delete_relationship(
+    rel_id: int,
+    graph_id: int,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
+    rel = session.get(RelationshipORM, rel_id)
+    if not rel:
+        raise HTTPException(status_code=404, detail="Relationship not found")
+    _assert_rel_access(session, rel, uid, "editor")
+    session.delete(rel)
+    session.commit()
     return {"ok": True}

@@ -1,108 +1,204 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Optional
-from ..database import get_db
+from sqlalchemy.orm import Session
+from sqlalchemy import select, func
+
+from ..database import get_session
+from ..db_models import Tag as TagORM, NodeTag as NodeTagORM, Node as NodeORM
 from ..models import Tag, TagCreate, TagUpdate
+from ..auth import get_current_uid, assert_story_access
 
 router = APIRouter(prefix="/tags", tags=["tags"])
 
-_COUNT_JOIN = """
-    SELECT t.id, t.name, t.color, t.scope, t.graph_id, COUNT(nt.node_id) AS count
-    FROM tags t LEFT JOIN node_tags nt ON t.id = nt.tag_id
-"""
+
+def _orm_to_schema(t: TagORM, count: int) -> dict:
+    return {
+        "id": t.id,
+        "name": t.name,
+        "color": t.color,
+        "scope": t.scope,
+        "graph_id": t.story_graph_id,  # HTTP key stays graph_id
+        "count": count,
+    }
 
 
-def _row_to_tag(row) -> dict:
-    return dict(row)
+def _get_count(session: Session, tag_id: int) -> int:
+    return session.execute(
+        select(func.count()).select_from(NodeTagORM).where(NodeTagORM.tag_id == tag_id)
+    ).scalar_one()
 
 
 @router.get("", response_model=List[Tag])
-def list_tags(graph_id: Optional[int] = None):
-    conn = get_db()
+def list_tags(
+    graph_id: Optional[int] = None,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
     if graph_id is not None:
-        rows = conn.execute(
-            _COUNT_JOIN + " WHERE (COALESCE(t.scope,'shared') = 'shared' OR t.graph_id = ?) GROUP BY t.id ORDER BY t.name",
-            (graph_id,),
-        ).fetchall()
+        # §4 visibility: story tags OR shared tags owned by story owner
+        story = assert_story_access(session, graph_id, uid, "viewer")
+        owner_id = story.owner_id
+        rows = session.execute(
+            select(TagORM).where(
+                (TagORM.story_graph_id == graph_id)
+                | (
+                    (TagORM.scope == "shared")
+                    & (TagORM.owner_id == owner_id)
+                )
+            ).order_by(TagORM.name)
+        ).scalars().all()
     else:
-        rows = conn.execute(_COUNT_JOIN + " GROUP BY t.id ORDER BY t.name").fetchall()
-    conn.close()
-    return [_row_to_tag(r) for r in rows]
+        # No story context: only the caller's own tags (never all tenants').
+        rows = session.execute(
+            select(TagORM)
+            .where(TagORM.owner_id == uid)
+            .order_by(TagORM.name)
+        ).scalars().all()
+    return [_orm_to_schema(t, _get_count(session, t.id)) for t in rows]
 
 
 @router.post("", response_model=Tag)
-def create_tag(data: TagCreate):
-    conn = get_db()
+def create_tag(
+    data: TagCreate,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
+    story_graph_id = data.graph_id
+    if story_graph_id is not None:
+        assert_story_access(session, story_graph_id, uid, "editor")
+
+    tag = TagORM(
+        owner_id=uid,
+        story_graph_id=story_graph_id,
+        name=data.name.strip(),
+        color=data.color,
+        scope=data.scope,
+    )
     try:
-        cur = conn.execute(
-            "INSERT INTO tags (name, color, scope, graph_id) VALUES (?, ?, ?, ?)",
-            (data.name.strip(), data.color, data.scope, data.graph_id),
-        )
-        tag_id = cur.lastrowid
-        conn.commit()
-        row = conn.execute(
-            _COUNT_JOIN + " WHERE t.id = ? GROUP BY t.id",
-            (tag_id,)
-        ).fetchone()
-        return _row_to_tag(row)
+        session.add(tag)
+        session.commit()
+        session.refresh(tag)
+        return _orm_to_schema(tag, 0)
     except Exception as e:
-        conn.rollback()
+        session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
-    finally:
-        conn.close()
 
 
 @router.put("/{tag_id}", response_model=Tag)
-def update_tag(tag_id: int, data: TagUpdate):
+def update_tag(
+    tag_id: int,
+    data: TagUpdate,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
     raw = data.model_dump(exclude_unset=True)
     if not raw:
         raise HTTPException(status_code=400, detail="No fields to update")
-    if "name" in raw:
-        raw["name"] = raw["name"].strip()
-    conn = get_db()
+
+    tag = session.get(TagORM, tag_id)
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+
+    if tag.story_graph_id is not None:
+        assert_story_access(session, tag.story_graph_id, uid, "editor")
+    elif tag.owner_id != uid:
+        raise HTTPException(status_code=404, detail="Not found")
+
     try:
-        set_clause = ", ".join(f"{k} = ?" for k in raw)
-        conn.execute(f"UPDATE tags SET {set_clause} WHERE id = ?", [*raw.values(), tag_id])
-        conn.commit()
-        row = conn.execute(
-            _COUNT_JOIN + " WHERE t.id = ? GROUP BY t.id",
-            (tag_id,)
-        ).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Tag not found")
-        return _row_to_tag(row)
+        for k, v in raw.items():
+            if k == "name":
+                tag.name = v.strip()
+            elif k == "graph_id":
+                tag.story_graph_id = v
+            else:
+                setattr(tag, k, v)
+        session.commit()
+        session.refresh(tag)
+        return _orm_to_schema(tag, _get_count(session, tag.id))
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
-    finally:
-        conn.close()
 
 
 @router.delete("/{tag_id}")
-def delete_tag(tag_id: int):
-    conn = get_db()
-    conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
-    conn.commit()
-    conn.close()
+def delete_tag(
+    tag_id: int,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
+    tag = session.get(TagORM, tag_id)
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+
+    if tag.story_graph_id is not None:
+        assert_story_access(session, tag.story_graph_id, uid, "editor")
+    elif tag.owner_id != uid:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    session.delete(tag)
+    session.commit()
     return {"ok": True}
 
 
 @router.post("/nodes/{node_id}/{tag_id}")
-def add_node_tag(node_id: int, tag_id: int):
-    conn = get_db()
-    try:
-        conn.execute("INSERT OR IGNORE INTO node_tags (node_id, tag_id) VALUES (?, ?)", (node_id, tag_id))
-        conn.commit()
-    finally:
-        conn.close()
+def add_node_tag(
+    node_id: int,
+    tag_id: int,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
+    # Authorize on the node's real story; reject cross-tenant tagging.
+    node = session.get(NodeORM, node_id)
+    if node is None:
+        raise HTTPException(status_code=404, detail="Node not found")
+    story = assert_story_access(session, node.story_graph_id, uid, "editor")
+
+    tag = session.get(TagORM, tag_id)
+    if tag is None:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    # §5(4): tag must be visible in this story (story-scoped here, or a
+    # shared tag owned by the story owner). Prevents attaching another
+    # tenant's tag to this node.
+    tag_visible = (
+        tag.story_graph_id == node.story_graph_id
+        or (tag.scope == "shared" and tag.owner_id == story.owner_id)
+    )
+    if not tag_visible:
+        raise HTTPException(status_code=404, detail="Tag not found")
+
+    existing = session.execute(
+        select(NodeTagORM).where(
+            NodeTagORM.node_id == node_id,
+            NodeTagORM.tag_id == tag_id,
+        )
+    ).scalar_one_or_none()
+    if not existing:
+        session.add(NodeTagORM(node_id=node_id, tag_id=tag_id))
+        session.commit()
     return {"ok": True}
 
 
 @router.delete("/nodes/{node_id}/{tag_id}")
-def remove_node_tag(node_id: int, tag_id: int):
-    conn = get_db()
-    conn.execute("DELETE FROM node_tags WHERE node_id = ? AND tag_id = ?", (node_id, tag_id))
-    conn.commit()
-    conn.close()
+def remove_node_tag(
+    node_id: int,
+    tag_id: int,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
+    node = session.get(NodeORM, node_id)
+    if node is None:
+        raise HTTPException(status_code=404, detail="Node not found")
+    assert_story_access(session, node.story_graph_id, uid, "editor")
+
+    existing = session.execute(
+        select(NodeTagORM).where(
+            NodeTagORM.node_id == node_id,
+            NodeTagORM.tag_id == tag_id,
+        )
+    ).scalar_one_or_none()
+    if existing:
+        session.delete(existing)
+        session.commit()
     return {"ok": True}

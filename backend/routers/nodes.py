@@ -1,162 +1,290 @@
-import json
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Optional
-from ..database import get_db
-from ..models import NodeCreate, NodeUpdate, Node, Relationship
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+
+from ..database import get_session
+from ..db_models import (
+    Node as NodeORM,
+    NodeType as NodeTypeORM,
+    NodeTag as NodeTagORM,
+    Tag as TagORM,
+    Relationship as RelationshipORM,
+    RelType as RelTypeORM,
+)
+from ..models import NodeCreate, NodeUpdate, Node
+from ..auth import get_current_uid, assert_story_access
 
 router = APIRouter(prefix="/nodes", tags=["nodes"])
 
-NODE_SELECT_FROM = """
-    FROM nodes n
-    JOIN node_types nt ON n.type_id = nt.id
-    LEFT JOIN node_tags ntj ON n.id = ntj.node_id
-    LEFT JOIN tags t ON ntj.tag_id = t.id
-"""
-
-NODE_SELECT_COLS = """
-    SELECT n.id, n.name, n.type_id, n.graph_id, n.description, n.metadata, n.date, n.created_at,
-           nt.name AS type_name, nt.color AS type_color, nt.is_date_type AS type_is_date_type,
-           GROUP_CONCAT(t.id || ':' || t.name || ':' || t.color, '|') AS tags_raw
-"""
-
-REL_SELECT = """
-    SELECT r.*,
-        sn.name AS source_name, st.color AS source_type_color,
-        tn.name AS target_name, tt.color AS target_type_color,
-        COALESCE(rt.color, '#4a5568') AS rel_color
-    FROM relationships r
-    JOIN nodes sn ON r.source_id = sn.id
-    JOIN node_types st ON sn.type_id = st.id
-    JOIN nodes tn ON r.target_id = tn.id
-    JOIN node_types tt ON tn.type_id = tt.id
-    LEFT JOIN rel_types rt ON r.label = rt.label
-"""
+REL_PALETTE = [
+    '#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6',
+    '#1abc9c', '#e67e22', '#e91e63', '#00bcd4', '#ff5722',
+    '#8bc34a', '#607d8b',
+]
 
 
-def _parse_tags(tags_raw):
-    if not tags_raw:
-        return []
-    result = []
-    for part in tags_raw.split('|'):
-        pieces = part.split(':', 2)
-        if len(pieces) == 3:
-            result.append({'id': int(pieces[0]), 'name': pieces[1], 'color': pieces[2]})
-    return result
+def _get_node_tags(session: Session, node_id: int) -> list:
+    rows = session.execute(
+        select(TagORM).join(NodeTagORM, TagORM.id == NodeTagORM.tag_id).where(
+            NodeTagORM.node_id == node_id
+        )
+    ).scalars().all()
+    return [{"id": t.id, "name": t.name, "color": t.color} for t in rows]
 
 
-def _row_to_node(row) -> dict:
-    d = dict(row)
-    d["metadata"] = json.loads(d.get("metadata") or "{}")
-    d["tags"] = _parse_tags(d.pop("tags_raw", None))
-    return d
+def _orm_to_node(session: Session, node: NodeORM, nt: NodeTypeORM) -> dict:
+    return {
+        "id": node.id,
+        "name": node.name,
+        "type_id": node.type_id,
+        "graph_id": node.story_graph_id,  # HTTP key stays graph_id
+        "type_name": nt.name,
+        "type_color": nt.color,
+        "type_is_date_type": nt.is_date_type,
+        "description": node.description,
+        "metadata": node.meta,  # ORM attr is meta; JSON key is metadata
+        "date": node.date,
+        "created_at": node.created_at,
+        "tags": _get_node_tags(session, node.id),
+    }
 
 
-def _node_query(where: str = "", params=()):
-    sql = NODE_SELECT_COLS + NODE_SELECT_FROM
-    if where:
-        sql += " WHERE " + where
-    sql += " GROUP BY n.id"
-    return sql, params
+def _get_node_with_type(session: Session, node_id: int):
+    """Return (NodeORM, NodeTypeORM) or (None, None)."""
+    node = session.get(NodeORM, node_id)
+    if node is None:
+        return None, None
+    nt = session.get(NodeTypeORM, node.type_id)
+    return node, nt
+
+
+def _get_rel_color(session: Session, story_graph_id: int, label: str) -> str:
+    rt = session.execute(
+        select(RelTypeORM).where(
+            RelTypeORM.story_graph_id == story_graph_id,
+            RelTypeORM.label == label,
+        )
+    ).scalar_one_or_none()
+    return rt.color if rt else '#4a5568'
+
+
+def _orm_to_rel(session: Session, rel: RelationshipORM) -> dict:
+    src = session.get(NodeORM, rel.source_id)
+    tgt = session.get(NodeORM, rel.target_id)
+    src_nt = session.get(NodeTypeORM, src.type_id) if src else None
+    tgt_nt = session.get(NodeTypeORM, tgt.type_id) if tgt else None
+    story_graph_id = src.story_graph_id if src else None
+    rel_color = _get_rel_color(session, story_graph_id, rel.label) if story_graph_id else '#4a5568'
+    return {
+        "id": rel.id,
+        "source_id": rel.source_id,
+        "source_name": src.name if src else "",
+        "source_type_color": src_nt.color if src_nt else "#000",
+        "target_id": rel.target_id,
+        "target_name": tgt.name if tgt else "",
+        "target_type_color": tgt_nt.color if tgt_nt else "#000",
+        "label": rel.label,
+        "rel_color": rel_color,
+        "notes": rel.notes,
+        "metadata": rel.meta,
+        "created_at": rel.created_at,
+    }
 
 
 @router.get("", response_model=List[Node])
-def list_nodes(type_id: Optional[int] = None, graph_id: Optional[int] = None):
-    conn = get_db()
-    conditions, params = [], []
+def list_nodes(
+    type_id: Optional[int] = None,
+    graph_id: Optional[int] = None,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
+    # graph_id is REQUIRED: nodes always belong to a story, and without it
+    # this would return every tenant's nodes.
+    if graph_id is None:
+        raise HTTPException(status_code=400, detail="graph_id is required")
+    assert_story_access(session, graph_id, uid, "viewer")
+    stmt = select(NodeORM).where(NodeORM.story_graph_id == graph_id)
     if type_id is not None:
-        conditions.append("n.type_id = ?"); params.append(type_id)
-    if graph_id is not None:
-        conditions.append("n.graph_id = ?"); params.append(graph_id)
-    where = " AND ".join(conditions) if conditions else ""
-    sql, p = _node_query(where, tuple(params))
-    rows = conn.execute(sql + " ORDER BY n.name", p).fetchall()
-    conn.close()
-    return [_row_to_node(r) for r in rows]
+        stmt = stmt.where(NodeORM.type_id == type_id)
+    stmt = stmt.order_by(NodeORM.name)
+    nodes = session.execute(stmt).scalars().all()
+    result = []
+    for node in nodes:
+        nt = session.get(NodeTypeORM, node.type_id)
+        result.append(_orm_to_node(session, node, nt))
+    return result
 
 
 @router.post("", response_model=Node)
-def create_node(data: NodeCreate):
-    conn = get_db()
-    try:
-        cur = conn.execute(
-            "INSERT INTO nodes (name, type_id, graph_id, description, metadata, date) VALUES (?, ?, ?, ?, ?, ?)",
-            (data.name, data.type_id, data.graph_id, data.description, json.dumps(data.metadata), data.date),
+def create_node(
+    data: NodeCreate,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
+    sid = data.graph_id  # HTTP graph_id → story_graph_id
+    story = assert_story_access(session, sid, uid, "editor")
+    owner_id = story.owner_id
+
+    # §5(4): verify type is visible for this story
+    nt = session.get(NodeTypeORM, data.type_id)
+    if nt is None:
+        raise HTTPException(status_code=400, detail="Node type not found")
+    type_visible = (
+        nt.story_graph_id == sid
+        or (nt.scope == "shared" and nt.owner_id == owner_id)
+    )
+    if not type_visible:
+        raise HTTPException(status_code=400, detail="Node type not visible in this story")
+
+    # §5(4): verify all tags are visible for this story
+    for tag_id in (data.tag_ids or []):
+        tag = session.get(TagORM, tag_id)
+        if tag is None:
+            raise HTTPException(status_code=400, detail=f"Tag {tag_id} not found")
+        tag_visible = (
+            tag.story_graph_id == sid
+            or (tag.scope == "shared" and tag.owner_id == owner_id)
         )
-        node_id = cur.lastrowid
-        for tag_id in (data.tag_ids or []):
-            conn.execute("INSERT OR IGNORE INTO node_tags (node_id, tag_id) VALUES (?, ?)", (node_id, tag_id))
-        conn.commit()
-        sql, params = _node_query("n.id = ?", (node_id,))
-        row = conn.execute(sql, params).fetchone()
-        return _row_to_node(row)
-    except Exception as exc:
-        conn.rollback()
-        raise HTTPException(status_code=400, detail=str(exc))
-    finally:
-        conn.close()
+        if not tag_visible:
+            raise HTTPException(status_code=400, detail=f"Tag {tag_id} not visible in this story")
 
-
-@router.get("/{node_id}", response_model=Node)
-def get_node(node_id: int):
-    conn = get_db()
-    sql, params = _node_query("n.id = ?", (node_id,))
-    row = conn.execute(sql, params).fetchone()
-    conn.close()
-    if not row:
-        raise HTTPException(status_code=404, detail="Node not found")
-    return _row_to_node(row)
-
-
-@router.put("/{node_id}", response_model=Node)
-def update_node(node_id: int, data: NodeUpdate):
-    raw = data.model_dump(exclude_unset=True)
-    tag_ids = raw.pop('tag_ids', None)
-    if not raw and tag_ids is None:
-        raise HTTPException(status_code=400, detail="No fields to update")
-    if "metadata" in raw:
-        raw["metadata"] = json.dumps(raw["metadata"] or {})
-    conn = get_db()
     try:
-        if raw:
-            set_clause = ", ".join(f"{k} = ?" for k in raw)
-            conn.execute(
-                f"UPDATE nodes SET {set_clause} WHERE id = ?",
-                [*raw.values(), node_id],
-            )
-        if tag_ids is not None:
-            conn.execute("DELETE FROM node_tags WHERE node_id = ?", (node_id,))
-            for tid in tag_ids:
-                conn.execute("INSERT OR IGNORE INTO node_tags (node_id, tag_id) VALUES (?, ?)", (node_id, tid))
-        conn.commit()
-        sql, params = _node_query("n.id = ?", (node_id,))
-        row = conn.execute(sql, params).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Node not found")
-        return _row_to_node(row)
+        node = NodeORM(
+            story_graph_id=sid,
+            type_id=data.type_id,
+            name=data.name,
+            description=data.description,
+            meta=data.metadata,
+            date=data.date,
+        )
+        session.add(node)
+        session.flush()  # get node.id
+
+        for tag_id in (data.tag_ids or []):
+            existing = session.execute(
+                select(NodeTagORM).where(
+                    NodeTagORM.node_id == node.id,
+                    NodeTagORM.tag_id == tag_id,
+                )
+            ).scalar_one_or_none()
+            if not existing:
+                session.add(NodeTagORM(node_id=node.id, tag_id=tag_id))
+
+        session.commit()
+        session.refresh(node)
+        node_nt = session.get(NodeTypeORM, node.type_id)
+        return _orm_to_node(session, node, node_nt)
     except HTTPException:
         raise
     except Exception as exc:
-        conn.rollback()
+        session.rollback()
         raise HTTPException(status_code=400, detail=str(exc))
-    finally:
-        conn.close()
+
+
+@router.get("/{node_id}", response_model=Node)
+def get_node(
+    node_id: int,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
+    node, nt = _get_node_with_type(session, node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    assert_story_access(session, node.story_graph_id, uid, "viewer")
+    return _orm_to_node(session, node, nt)
+
+
+@router.put("/{node_id}", response_model=Node)
+def update_node(
+    node_id: int,
+    data: NodeUpdate,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
+    node, nt = _get_node_with_type(session, node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    story = assert_story_access(session, node.story_graph_id, uid, "editor")
+    owner_id = story.owner_id
+    sid = node.story_graph_id
+
+    raw = data.model_dump(exclude_unset=True)
+    tag_ids = raw.pop("tag_ids", None)
+    if not raw and tag_ids is None:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    try:
+        for k, v in raw.items():
+            if k == "metadata":
+                node.meta = v or {}
+            else:
+                setattr(node, k, v)
+
+        if tag_ids is not None:
+            # Validate tag visibility
+            for tag_id in tag_ids:
+                tag = session.get(TagORM, tag_id)
+                if tag is None:
+                    raise HTTPException(status_code=400, detail=f"Tag {tag_id} not found")
+                tag_visible = (
+                    tag.story_graph_id == sid
+                    or (tag.scope == "shared" and tag.owner_id == owner_id)
+                )
+                if not tag_visible:
+                    raise HTTPException(status_code=400, detail=f"Tag {tag_id} not visible in this story")
+
+            # Replace tags
+            existing_tags = session.execute(
+                select(NodeTagORM).where(NodeTagORM.node_id == node_id)
+            ).scalars().all()
+            for et in existing_tags:
+                session.delete(et)
+            session.flush()
+            for tid in tag_ids:
+                session.add(NodeTagORM(node_id=node_id, tag_id=tid))
+
+        session.commit()
+        session.refresh(node)
+        node_nt = session.get(NodeTypeORM, node.type_id)
+        return _orm_to_node(session, node, node_nt)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.delete("/{node_id}")
-def delete_node(node_id: int):
-    conn = get_db()
-    conn.execute("DELETE FROM nodes WHERE id = ?", (node_id,))
-    conn.commit()
-    conn.close()
+def delete_node(
+    node_id: int,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
+    node = session.get(NodeORM, node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    assert_story_access(session, node.story_graph_id, uid, "editor")
+    session.delete(node)
+    session.commit()
     return {"ok": True}
 
 
 @router.get("/{node_id}/relationships")
-def get_node_relationships(node_id: int):
-    conn = get_db()
-    rows = conn.execute(
-        REL_SELECT + " WHERE r.source_id = ? OR r.target_id = ? ORDER BY r.created_at DESC",
-        (node_id, node_id),
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+def get_node_relationships(
+    node_id: int,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
+    node = session.get(NodeORM, node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    assert_story_access(session, node.story_graph_id, uid, "viewer")
+
+    rels = session.execute(
+        select(RelationshipORM).where(
+            (RelationshipORM.source_id == node_id)
+            | (RelationshipORM.target_id == node_id)
+        ).order_by(RelationshipORM.created_at.desc())
+    ).scalars().all()
+    return [_orm_to_rel(session, r) for r in rels]
