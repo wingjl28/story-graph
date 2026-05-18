@@ -253,6 +253,35 @@ class RelType(Base):
     color: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+# ── Pending invites ────────────────────────────────────────────────────────
+
+class PendingInvite(Base):
+    __tablename__ = "pending_invites"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    story_graph_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("story_graphs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    email: Mapped[str] = mapped_column(Text, nullable=False)
+    role: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[object] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("role IN ('editor','viewer')", name="pending_invites_role_chk"),
+        Index(
+            "uq_pending_invites_story_email",
+            "story_graph_id",
+            func.lower(email),
+            unique=True,
+        ),
+        Index("ix_pending_invites_email", func.lower(email)),
+    )
+
+
 # ── Per-user node positions ────────────────────────────────────────────────
 
 class StoryNodePosition(Base):

@@ -135,6 +135,43 @@ class RelationshipUpdate(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 
+# ── Collaboration / invite schemas (Phase 2) ──────────────────────────────
+
+class CollaboratorOut(BaseModel):
+    user_id: int
+    email: str
+    display_name: Optional[str]
+    role: str
+
+
+class OwnerOut(BaseModel):
+    user_id: int
+    email: str
+    display_name: Optional[str]
+
+
+class PendingInviteOut(BaseModel):
+    email: str
+    role: str
+
+
+class CollaboratorsResponse(BaseModel):
+    owner: OwnerOut
+    collaborators: List[CollaboratorOut]
+    pending: List[PendingInviteOut]
+
+
+class InviteIn(BaseModel):
+    email: str
+    role: str  # must be 'editor' or 'viewer'; validated in endpoint
+
+
+class RolePatch(BaseModel):
+    role: str  # must be 'editor' or 'viewer'; validated in endpoint
+
+
+# ── Relationships ──────────────────────────────────────────────────────────
+
 class Relationship(BaseModel):
     id: int
     source_id: int
