@@ -31,6 +31,10 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ ./backend/
+# alembic.ini lives at the repo root and is required at runtime by
+# init_db() -> `alembic upgrade head` (resolves to /app/alembic.ini).
+# Migrations themselves are under backend/migrations (copied above).
+COPY alembic.ini ./alembic.ini
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
 EXPOSE 8000
