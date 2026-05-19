@@ -21,7 +21,11 @@ async function req(url, options = {}) {
     ...options,
   })
   if (res.status === 401) {
-    if (_onAuthError) _onAuthError()
+    // Do NOT auto-trigger signinRedirect on 401: a *bad* (vs merely
+    // expired) token loops infinitely: login -> 401 -> re-login -> 401 ...
+    // Throw the error; the app surfaces it and the user can explicitly
+    // sign out / sign in again via the sidebar control. (Genuine token
+    // expiry is handled by react-oidc-context's automaticSilentRenew.)
     const body = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(body.detail || 'Unauthorized')
   }

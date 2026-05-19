@@ -200,7 +200,19 @@ def get_current_uid(
             detail="Invalid token type",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    if claims.get("email_verified") is not True:
+    # Email-verification trust model:
+    #   - Federated sign-ins (Google/Apple/Microsoft via Cognito) carry an
+    #     `identities` claim. The IdP IS the email verifier in that flow
+    #     (Google/MS/Apple all require verified email to issue the account);
+    #     Cognito's own `email_verified` for federated users is unreliable
+    #     unless an explicit attribute mapping is configured per-provider.
+    #     Trust the IdP for these.
+    #   - Non-federated (Cognito-native) users still must have
+    #     email_verified == True. selfSignUpEnabled is false today so this
+    #     branch is mostly defensive, but matters if native sign-up is ever
+    #     enabled.
+    is_federated = bool(claims.get("identities"))
+    if not is_federated and claims.get("email_verified") is not True:
         raise HTTPException(
             status_code=401,
             detail="Email not verified",
