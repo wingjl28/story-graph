@@ -161,13 +161,21 @@ its SSM params are not required. Google is always on.)
 > `--require-approval never` is used on purpose: this stack's IAM/security-
 > group changes were already designed + security-reviewed
 > (docs/PHASE4_REVIEW.md §9, docs/PHASE5_FINAL_REVIEW.md). Git Bash on
-> Windows also can't service CDK's interactive approval prompt (no TTY), so
-> the flag is required there regardless. RDS `deletionProtection` +
-> `RETAIN` on RDS/ECR/Cognito remain your real safety net.
+> Windows also can't service CDK's interactive approval prompt (no TTY).
 
-**Expected:** ECR, RDS, Cognito (+ Pre-Sign-up Lambda), VPC create fine.
-The **App Runner service may fail/pause on first deploy because no image
-exists yet in ECR** — this is expected. ECR has `RETAIN`, so proceed.
+**Expected:** the first deploy creates VPC, ECR, RDS (~10–15 min — be
+patient), Cognito + Pre-Sign-up Lambda, IAM roles — and **succeeds**. The
+App Runner service is intentionally **NOT created yet** (it's gated behind
+`-c enableService=true`) because a brand-new ECR repo is empty and the
+service can't start without an image — which would roll the whole stack
+back. You turn it on in §5 after pushing the image.
+
+> **Bring-up safety note:** while you're getting this working, ECR/RDS/
+> Cognito use `removalPolicy: DESTROY` and RDS `deletionProtection:false`
+> so a failed deploy self-cleans and the deterministic Cognito domain
+> doesn't collide on retry. **Before real users/data**, flip the three
+> `DESTROY → RETAIN` and RDS `deletionProtection → true` in
+> `infra/lib/story-graph-stack.ts` (clearly marked) and `cdk deploy` once.
 
 ## 4. Build & push the image (auth config is baked in at build time)
 
@@ -188,13 +196,19 @@ docker build \
 docker push "${ECR_URI}:latest"
 ```
 
-## 5. Re-deploy to finalize App Runner + Cognito callback URLs
+## 5. Turn on App Runner, then finalize Cognito callback URLs
+
+Now that an image is in ECR, enable the service (note `-c enableService=true`):
 
 ```bash
-cd infra && npx cdk deploy --require-approval never   # App Runner now finds the image
+cd infra && npx cdk deploy --require-approval never -c enableService=true   # creates App Runner, pulls your image
 export APP_URL=$(aws cloudformation describe-stacks --stack-name StoryGraphStack --query "Stacks[0].Outputs[?OutputKey=='AppRunnerServiceUrl'].OutputValue" --output text)
-npx cdk deploy --require-approval never -c appUrl="https://${APP_URL}"   # adds the real SPA callback/logout URL to Cognito
+npx cdk deploy --require-approval never -c enableService=true -c appUrl="https://${APP_URL}"   # adds the real SPA callback/logout URL to Cognito
 ```
+
+> Keep `-c enableService=true` on every subsequent deploy (and add
+> `-c enableApple=true`/`-c enableMicrosoft=true` if/when you enable those).
+> Omitting `enableService` would delete the App Runner service.
 
 > If you change `VITE_*` (e.g. after the appUrl is known you may want the
 > SPA's OIDC redirect to be the App Runner URL), rebuild & push the image

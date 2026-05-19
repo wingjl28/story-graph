@@ -63,12 +63,24 @@ export class StoryGraphStack extends cdk.Stack {
       ],
     });
 
+    // ╔══════════════════════════════════════════════════════════════════╗
+    // ║ BRING-UP PHASE: ECR/RDS/Cognito use removalPolicy DESTROY (+ RDS  ║
+    // ║ deletionProtection:false) so failed/rolled-back deploys self-     ║
+    // ║ clean and the deterministic Cognito domain doesn't collide on     ║
+    // ║ retry. There is NO real data yet, so RETAIN only causes orphan/   ║
+    // ║ collision pain.                                                   ║
+    // ║ >>> PRODUCTION HARDENING (do before real users/data): flip the    ║
+    // ║ three removalPolicy DESTROY -> RETAIN and RDS                     ║
+    // ║ deletionProtection -> true, then `cdk deploy` once.               ║
+    // ╚══════════════════════════════════════════════════════════════════╝
+
     // ─── §3  ECR REPOSITORY ────────────────────────────────────────────────
     const repository = new ecr.Repository(this, 'EcrRepo', {
       imageScanOnPush: true,
       encryption: ecr.RepositoryEncryption.KMS,
       lifecycleRules: [{ maxImageCount: 5 }],
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      removalPolicy: cdk.RemovalPolicy.DESTROY, // bring-up; -> RETAIN for prod
+      emptyOnDelete: true, // allow repo delete even with images pushed
     });
 
     // ─── §4  RDS ───────────────────────────────────────────────────────────
@@ -96,10 +108,11 @@ export class StoryGraphStack extends cdk.Stack {
       storageType: rds.StorageType.GP3,
       storageEncrypted: true,
       backupRetention: cdk.Duration.days(7),
-      deletionProtection: true,
+      deletionProtection: false, // bring-up; -> true for prod
       publiclyAccessible: false,
       credentials: rds.Credentials.fromGeneratedSecret('sgadmin'),
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      removalPolicy: cdk.RemovalPolicy.DESTROY, // bring-up; -> RETAIN for prod
+      deleteAutomatedBackups: true,
     });
 
     // ─── §5  CREDENTIAL STORAGE (USER-CREATED — NOT managed by CDK) ────────
@@ -188,7 +201,7 @@ export class StoryGraphStack extends cdk.Stack {
       mfa: cognito.Mfa.OPTIONAL,
       advancedSecurityMode: cognito.AdvancedSecurityMode.AUDIT,
       lambdaTriggers: { preSignUp: preSignUpFn },
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      removalPolicy: cdk.RemovalPolicy.DESTROY, // bring-up; -> RETAIN for prod
     });
 
     // Federated IdPs are opt-in. Google is always enabled; Apple and
@@ -382,11 +395,18 @@ export class StoryGraphStack extends cdk.Stack {
       ],
     });
 
-    // App Runner service
-    // Note on API shape: in aws-apprunner-alpha, environmentVariables and
-    // environmentSecrets belong inside `imageConfiguration` (passed through
-    // the source), NOT at the top ServiceProps level.
-    const service = new apprunner.Service(this, 'Service', {
+    // App Runner service is OPT-IN. A brand-new ECR repo is empty, so on a
+    // first deploy the container image can't be pulled, the Service fails
+    // to stabilize, and the ENTIRE create rolls back. Correct order:
+    //   1) npx cdk deploy --require-approval never        (no service; creates ECR/RDS/Cognito)
+    //   2) build & push the image to ECR (runbook §4)
+    //   3) npx cdk deploy --require-approval never -c enableService=true
+    // (env vars/secrets live in imageConfiguration per the alpha API shape.)
+    const enableService =
+      String(this.node.tryGetContext('enableService')) === 'true';
+    let service: apprunner.Service | undefined;
+    if (enableService) {
+      service = new apprunner.Service(this, 'Service', {
       source: apprunner.Source.fromEcr({
         repository,
         tagOrDigest: 'latest',
@@ -427,7 +447,8 @@ export class StoryGraphStack extends cdk.Stack {
         healthyThreshold: 2,
         unhealthyThreshold: 5,
       }),
-    });
+      });
+    }
 
     // ─── §8  CFN OUTPUTS ───────────────────────────────────────────────────
     new cdk.CfnOutput(this, 'EcrRepoUri', {
@@ -435,11 +456,13 @@ export class StoryGraphStack extends cdk.Stack {
       description: 'ECR repository URI',
     });
 
-    new cdk.CfnOutput(this, 'AppRunnerServiceUrl', {
-      value: service.serviceUrl,
-      description:
-        'App Runner service URL - use as: npx cdk deploy -c appUrl=https://<value>',
-    });
+    if (service) {
+      new cdk.CfnOutput(this, 'AppRunnerServiceUrl', {
+        value: service.serviceUrl,
+        description:
+          'App Runner service URL - use as: npx cdk deploy -c enableService=true -c appUrl=https://<value>',
+      });
+    }
 
     new cdk.CfnOutput(this, 'CognitoUserPoolId', {
       value: userPool.userPoolId,

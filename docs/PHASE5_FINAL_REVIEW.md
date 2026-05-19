@@ -56,9 +56,16 @@ bounded and documented.
 
 ## Residual items (bounded, documented — not blockers)
 
-1. **`unsafePlainText` on OAuth IdP secrets.** Acceptable: the value is a
-   CFN `{{resolve:ssm-secure}}` token, not a real secret; CloudFormation
-   resolves it at deploy and it never appears in the template body.
+1. **OAuth IdP secrets via Secrets Manager dynamic references.** The CFN
+   template carries only `{{resolve:secretsmanager:...}}` tokens, never the
+   value; encrypted at rest, masked in templates. (Original `ssm-secure`
+   plan was rejected by CFN for the Cognito IdP property — corrected.)
+1a. **BRING-UP removal policy.** ECR/RDS/Cognito are currently
+   `removalPolicy: DESTROY` + RDS `deletionProtection:false` to make
+   iterative first-time deploys self-cleaning (no real data exists yet).
+   **Hardening before production use:** flip the three to `RETAIN` and RDS
+   `deletionProtection:true` (clearly marked in the stack) and redeploy.
+   Tracked, must-do-before-real-users.
 2. **Broad `except Exception` → 401** in token validation masks transient
    JWKS/network failures as auth failures (availability, not security).
    Fail-closed by design; optional 503 refinement later.
