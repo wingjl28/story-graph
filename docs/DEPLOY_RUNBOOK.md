@@ -136,8 +136,15 @@ aws ssm put-parameter --type SecureString --name /storygraph/oauth/microsoft/cli
 ```bash
 cd infra && npm install
 npx cdk bootstrap aws://${ACCOUNT_ID}/${AWS_REGION}      # once per acct/region
-npx cdk deploy                                            # appUrl defaults to localhost
+npx cdk deploy --require-approval never                   # appUrl defaults to localhost
 ```
+
+> `--require-approval never` is used on purpose: this stack's IAM/security-
+> group changes were already designed + security-reviewed
+> (docs/PHASE4_REVIEW.md §9, docs/PHASE5_FINAL_REVIEW.md). Git Bash on
+> Windows also can't service CDK's interactive approval prompt (no TTY), so
+> the flag is required there regardless. RDS `deletionProtection` +
+> `RETAIN` on RDS/ECR/Cognito remain your real safety net.
 
 **Expected:** ECR, RDS, Cognito (+ Pre-Sign-up Lambda), VPC create fine.
 The **App Runner service may fail/pause on first deploy because no image
@@ -165,9 +172,9 @@ docker push "${ECR_URI}:latest"
 ## 5. Re-deploy to finalize App Runner + Cognito callback URLs
 
 ```bash
-cd infra && npx cdk deploy        # App Runner now finds the image
+cd infra && npx cdk deploy --require-approval never   # App Runner now finds the image
 export APP_URL=$(aws cloudformation describe-stacks --stack-name StoryGraphStack --query "Stacks[0].Outputs[?OutputKey=='AppRunnerServiceUrl'].OutputValue" --output text)
-npx cdk deploy -c appUrl="https://${APP_URL}"   # adds the real SPA callback/logout URL to Cognito
+npx cdk deploy --require-approval never -c appUrl="https://${APP_URL}"   # adds the real SPA callback/logout URL to Cognito
 ```
 
 > If you change `VITE_*` (e.g. after the appUrl is known you may want the
