@@ -183,7 +183,25 @@ export class StoryGraphStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
-    // Google IdP — email + email_verified mapping resolves Phase-2 follow-up.
+    // Federated IdPs are opt-in. Google is always enabled; Apple and
+    // Microsoft are only created when their SSM params exist AND the
+    // operator opts in via context, e.g.:
+    //   npx cdk deploy --require-approval never \
+    //     -c enableApple=true -c enableMicrosoft=true
+    // This lets you launch with Google now and add the others later with a
+    // single redeploy (CloudFormation adds the new IdP + provider).
+    const enableApple =
+      String(this.node.tryGetContext('enableApple')) === 'true';
+    const enableMicrosoft =
+      String(this.node.tryGetContext('enableMicrosoft')) === 'true';
+
+    // Track created IdPs so the app client depends only on real ones.
+    const createdIdps: Construct[] = [];
+    const supportedIdps: cognito.UserPoolClientIdentityProvider[] = [
+      cognito.UserPoolClientIdentityProvider.GOOGLE,
+    ];
+
+    // Google IdP — always enabled.
     // clientSecretValue uses unsafePlainText so the CFN dynamic-reference token
     // passes through unmodified; no real secret is in source/synth.
     const googleIdp = new cognito.UserPoolIdentityProviderGoogle(
@@ -201,40 +219,51 @@ export class StoryGraphStack extends cdk.Stack {
         },
       },
     );
+    createdIdps.push(googleIdp);
 
-    // Apple IdP — privateKeyValue passes the CFN resolve token through.
-    const appleIdp = new cognito.UserPoolIdentityProviderApple(
-      this,
-      'AppleIdp',
-      {
-        userPool,
-        clientId: appleClientId,
-        teamId: appleTeamId,
-        keyId: appleKeyId,
-        privateKeyValue: cdk.SecretValue.unsafePlainText(applePrivateKey),
-        scopes: ['email', 'name'],
-        attributeMapping: {
-          email: cognito.ProviderAttribute.APPLE_EMAIL,
+    // Apple IdP — only if opted in (requires the apple/* SSM params).
+    if (enableApple) {
+      const appleIdp = new cognito.UserPoolIdentityProviderApple(
+        this,
+        'AppleIdp',
+        {
+          userPool,
+          clientId: appleClientId,
+          teamId: appleTeamId,
+          keyId: appleKeyId,
+          privateKeyValue: cdk.SecretValue.unsafePlainText(applePrivateKey),
+          scopes: ['email', 'name'],
+          attributeMapping: {
+            email: cognito.ProviderAttribute.APPLE_EMAIL,
+          },
         },
-      },
-    );
+      );
+      createdIdps.push(appleIdp);
+      supportedIdps.push(cognito.UserPoolClientIdentityProvider.APPLE);
+    }
 
-    // Microsoft (Entra v2) via generic OIDC provider
-    const microsoftIdp = new cognito.UserPoolIdentityProviderOidc(
-      this,
-      'MicrosoftIdp',
-      {
-        userPool,
-        name: 'Microsoft',
-        clientId: msClientId,
-        clientSecret: msClientSecret,
-        issuerUrl: 'https://login.microsoftonline.com/common/v2.0',
-        scopes: ['openid', 'email', 'profile'],
-        attributeMapping: {
-          email: cognito.ProviderAttribute.other('email'),
+    // Microsoft (Entra v2) via generic OIDC — only if opted in.
+    if (enableMicrosoft) {
+      const microsoftIdp = new cognito.UserPoolIdentityProviderOidc(
+        this,
+        'MicrosoftIdp',
+        {
+          userPool,
+          name: 'Microsoft',
+          clientId: msClientId,
+          clientSecret: msClientSecret,
+          issuerUrl: 'https://login.microsoftonline.com/common/v2.0',
+          scopes: ['openid', 'email', 'profile'],
+          attributeMapping: {
+            email: cognito.ProviderAttribute.other('email'),
+          },
         },
-      },
-    );
+      );
+      createdIdps.push(microsoftIdp);
+      supportedIdps.push(
+        cognito.UserPoolClientIdentityProvider.custom('Microsoft'),
+      );
+    }
 
     // Hosted UI domain (Cognito prefix — no custom domain / ACM for cost)
     const hostedUiDomain = userPool.addDomain('Domain', {
@@ -266,21 +295,17 @@ export class StoryGraphStack extends cdk.Stack {
         callbackUrls,
         logoutUrls,
       },
-      supportedIdentityProviders: [
-        cognito.UserPoolClientIdentityProvider.GOOGLE,
-        cognito.UserPoolClientIdentityProvider.APPLE,
-        cognito.UserPoolClientIdentityProvider.custom('Microsoft'),
-      ],
+      supportedIdentityProviders: supportedIdps,
       preventUserExistenceErrors: true,
       idTokenValidity: cdk.Duration.minutes(60),
       accessTokenValidity: cdk.Duration.minutes(60),
       refreshTokenValidity: cdk.Duration.days(30),
     });
 
-    // Ensure IdPs are created before the client
-    client.node.addDependency(googleIdp);
-    client.node.addDependency(appleIdp);
-    client.node.addDependency(microsoftIdp);
+    // Ensure all (and only) created IdPs exist before the client
+    for (const idp of createdIdps) {
+      client.node.addDependency(idp);
+    }
 
     // ─── §7  APP RUNNER ────────────────────────────────────────────────────
 

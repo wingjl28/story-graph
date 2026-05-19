@@ -118,17 +118,23 @@ resolves them at deploy). Correct types matter.
 > parameter** if you'd rather avoid the CLI for these 8 — names must be
 > exactly as below, types as labelled.
 
+**Google is the only provider required to launch.** Apple and Microsoft
+are opt-in (see §3) — create their params only when you enable them.
+
 ```bash
-# --- String params ---
-aws ssm put-parameter --type String --name /storygraph/oauth/google/client_id      --value "<google_client_id>"
-aws ssm put-parameter --type String --name /storygraph/oauth/apple/client_id       --value "<apple_services_id>"
-aws ssm put-parameter --type String --name /storygraph/oauth/apple/team_id         --value "<apple_team_id>"
-aws ssm put-parameter --type String --name /storygraph/oauth/apple/key_id          --value "<apple_key_id>"
-aws ssm put-parameter --type String --name /storygraph/oauth/microsoft/client_id   --value "<ms_client_id>"
-# --- SecureString params ---
-aws ssm put-parameter --type SecureString --name /storygraph/oauth/google/client_secret     --value "<google_secret>"
-aws ssm put-parameter --type SecureString --name /storygraph/oauth/apple/private_key         --value "$(cat AuthKey_XXXX.p8)"
-aws ssm put-parameter --type SecureString --name /storygraph/oauth/microsoft/client_secret   --value "<ms_secret>"
+# === REQUIRED NOW (Google only) ===
+aws ssm put-parameter --type String       --name /storygraph/oauth/google/client_id      --value "<google_client_id>"
+aws ssm put-parameter --type SecureString --name /storygraph/oauth/google/client_secret  --value "<google_secret>"
+
+# === LATER, only if you enable Apple (§3) ===
+aws ssm put-parameter --type String       --name /storygraph/oauth/apple/client_id       --value "<apple_services_id>"
+aws ssm put-parameter --type String       --name /storygraph/oauth/apple/team_id         --value "<apple_team_id>"
+aws ssm put-parameter --type String       --name /storygraph/oauth/apple/key_id          --value "<apple_key_id>"
+aws ssm put-parameter --type SecureString --name /storygraph/oauth/apple/private_key      --value "$(cat AuthKey_XXXX.p8)"
+
+# === LATER, only if you enable Microsoft (§3) ===
+aws ssm put-parameter --type String       --name /storygraph/oauth/microsoft/client_id     --value "<ms_client_id>"
+aws ssm put-parameter --type SecureString --name /storygraph/oauth/microsoft/client_secret --value "<ms_secret>"
 ```
 
 ## 3. Bootstrap + first deploy
@@ -136,8 +142,16 @@ aws ssm put-parameter --type SecureString --name /storygraph/oauth/microsoft/cli
 ```bash
 cd infra && npm install
 npx cdk bootstrap aws://${ACCOUNT_ID}/${AWS_REGION}      # once per acct/region
-npx cdk deploy --require-approval never                   # appUrl defaults to localhost
+npx cdk deploy --require-approval never                   # Google only; appUrl defaults to localhost
 ```
+
+**Adding Apple / Microsoft later:** create their SSM params (§2), then
+redeploy with the opt-in flags — CloudFormation just adds the new IdP(s):
+```bash
+npx cdk deploy --require-approval never -c enableApple=true -c enableMicrosoft=true
+```
+(Use either or both flags. Omitting a flag = that provider stays off and
+its SSM params are not required. Google is always on.)
 
 > `--require-approval never` is used on purpose: this stack's IAM/security-
 > group changes were already designed + security-reviewed
