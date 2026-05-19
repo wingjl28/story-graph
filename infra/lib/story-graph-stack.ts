@@ -370,6 +370,11 @@ export class StoryGraphStack extends cdk.Stack {
       subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       securityGroups: [endpointSg],
       privateDnsEnabled: true,
+      // cognito-idp is not offered in every us-east-1 AZ; let CDK query
+      // the supported AZs and place the endpoint only there (otherwise an
+      // unsupported-AZ subnet fails the whole deploy, as it just did).
+      // Synth-time AWS lookup -> writes infra/cdk.context.json.
+      lookupSupportedAzs: true,
     });
 
     const vpcConnector = new apprunner.VpcConnector(this, 'VpcConn', {
