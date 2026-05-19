@@ -344,6 +344,34 @@ export class StoryGraphStack extends cdk.Stack {
       'App Runner connector to Postgres',
     );
 
+    // ── Cognito JWKS reachability (CRITICAL) ───────────────────────────────
+    // App Runner egress is all-or-nothing: using a VPC connector to reach
+    // private RDS routes ALL outbound through the VPC, which has NO NAT.
+    // The backend must fetch Cognito JWKS (cognito-idp.<region>.amazonaws.com)
+    // on every authenticated request to validate the JWT. With no internet
+    // route that fetch hangs -> App Runner 502 after ~timeout. A
+    // cognito-idp Interface VPC Endpoint (~$7/mo, vs ~$32 NAT) gives a
+    // private, in-VPC path with private DNS so the standard hostname
+    // resolves to the endpoint.
+    const endpointSg = new ec2.SecurityGroup(this, 'CognitoIdpEndpointSg', {
+      vpc,
+      description: 'Cognito IDP interface endpoint - 443 from App Runner',
+      allowAllOutbound: false,
+    });
+    endpointSg.addIngressRule(
+      connectorSg,
+      ec2.Port.tcp(443),
+      'App Runner connector to Cognito IDP endpoint',
+    );
+    vpc.addInterfaceEndpoint('CognitoIdpEndpoint', {
+      // Generic ctor (the named COGNITO_IDP member isn't in all cdk-lib
+      // versions) -> service name com.amazonaws.<region>.cognito-idp
+      service: new ec2.InterfaceVpcEndpointAwsService('cognito-idp'),
+      subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+      securityGroups: [endpointSg],
+      privateDnsEnabled: true,
+    });
+
     const vpcConnector = new apprunner.VpcConnector(this, 'VpcConn', {
       vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
