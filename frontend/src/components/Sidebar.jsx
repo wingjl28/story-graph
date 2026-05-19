@@ -109,7 +109,7 @@ export default function Sidebar({
       </div>
 
       {/* Story graph selector */}
-      {storyGraphs && storyGraphs.length > 0 && (
+      {storyGraphs && storyGraphs.length > 0 ? (
         <div className="graph-selector">
           <select
             className="graph-select"
@@ -140,6 +140,19 @@ export default function Sidebar({
               <Icon icon="carbon:share" width={15} />
             </button>
           )}
+        </div>
+      ) : (
+        /* Brand-new user empty state: no story_graphs yet. */
+        <div className="graph-selector empty-state-selector">
+          <button
+            className="btn btn-primary"
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+            onClick={onNewGraph}
+            title="Create your first story"
+          >
+            <Icon icon="carbon:add" width={15} />
+            Create your first story
+          </button>
         </div>
       )}
 
