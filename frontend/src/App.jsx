@@ -176,12 +176,39 @@ export default function App() {
     }
   }, [activeGraphId])
 
+  // Initial data load:
+  // 1. In prod (AUTH_ENABLED), wait until OIDC callback completes and
+  //    AuthBridge has pushed the id_token into api.js. Without this guard,
+  //    these fetches fire on mount BEFORE the token is attached -> 401s.
+  // 2. Load story_graphs first; only fetch per-story data if at least one
+  //    exists. A brand-new user has zero stories and the legacy default
+  //    activeGraphId=1 would 404 every per-story call.
   useEffect(() => {
-    loadGraph()
-    loadNodeTypes()
-    loadTags()
-    loadStoryGraphs()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    if (AUTH_ENABLED && !authUser) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const graphs = await api.getStoryGraphs()
+        if (cancelled) return
+        setStoryGraphs(graphs)
+        if (graphs.length === 0) return // empty state -> sidebar "+ New Story"
+        const gid = graphs.find((g) => g.id === activeGraphId)?.id ?? graphs[0].id
+        if (gid !== activeGraphId) setActiveGraphId(gid)
+        const [graph, types, tags] = await Promise.all([
+          api.getGraph(gid),
+          api.getNodeTypes(gid),
+          api.getTags(gid),
+        ])
+        if (cancelled) return
+        setGraphData(graph)
+        setNodeTypes(types)
+        setAllTags(tags)
+      } catch (e) {
+        if (!cancelled) setError(e.message)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [authUser]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshNodeRels = useCallback(async (nodeId) => {
     try {
