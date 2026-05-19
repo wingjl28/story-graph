@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
-from typing import List
+from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 
@@ -126,26 +126,28 @@ def list_relationships(
 @router.post("", response_model=Relationship)
 def create_relationship(
     data: RelationshipCreate,
-    graph_id: int,
     session: Session = Depends(get_session),
     uid: int = Depends(get_current_uid),
 ):
+    # The rel's story is inherently the source node's story; derive it
+    # instead of trusting a client-supplied graph_id (also lets the frontend
+    # POST without a ?graph_id= query param). §5(3) is enforced by requiring
+    # source and target to be in the same story.
     label = _normalize(data.label)
     if not label:
         raise HTTPException(status_code=400, detail="Label cannot be empty")
 
-    assert_story_access(session, graph_id, uid, "editor")
-
-    # §5(3): source and target must belong to the same story
     src = session.get(NodeORM, data.source_id)
     tgt = session.get(NodeORM, data.target_id)
     if not src or not tgt:
         raise HTTPException(status_code=400, detail="Source or target node not found")
-    if src.story_graph_id != graph_id or tgt.story_graph_id != graph_id:
+    if src.story_graph_id != tgt.story_graph_id:
         raise HTTPException(
             status_code=400,
-            detail="Source and target nodes must belong to this story",
+            detail="Source and target nodes must belong to the same story",
         )
+    sid = src.story_graph_id
+    assert_story_access(session, sid, uid, "editor")
 
     try:
         if _check_duplicate(session, data.source_id, data.target_id, label):
@@ -153,7 +155,7 @@ def create_relationship(
                 status_code=400,
                 detail=f'"{label}" already exists between these two nodes',
             )
-        _ensure_rel_type(session, graph_id, label)
+        _ensure_rel_type(session, sid, label)
         rel = RelationshipORM(
             source_id=data.source_id,
             target_id=data.target_id,
@@ -175,7 +177,7 @@ def create_relationship(
 @router.get("/{rel_id}", response_model=Relationship)
 def get_relationship(
     rel_id: int,
-    graph_id: int,
+    graph_id: Optional[int] = None,  # legacy query param; rel's story is derived from its source node
     session: Session = Depends(get_session),
     uid: int = Depends(get_current_uid),
 ):
@@ -190,7 +192,7 @@ def get_relationship(
 def update_relationship(
     rel_id: int,
     data: RelationshipUpdate,
-    graph_id: int,
+    graph_id: Optional[int] = None,  # legacy query param; rel's story is derived from its source node
     session: Session = Depends(get_session),
     uid: int = Depends(get_current_uid),
 ):
@@ -236,7 +238,7 @@ def update_relationship(
 @router.post("/{rel_id}/toggle-bidirectional")
 def toggle_bidirectional(
     rel_id: int,
-    graph_id: int,
+    graph_id: Optional[int] = None,  # legacy query param; rel's story is derived from its source node
     session: Session = Depends(get_session),
     uid: int = Depends(get_current_uid),
 ):
@@ -279,7 +281,7 @@ def toggle_bidirectional(
 @router.post("/{rel_id}/swap", response_model=Relationship)
 def swap_relationship_direction(
     rel_id: int,
-    graph_id: int,
+    graph_id: Optional[int] = None,  # legacy query param; rel's story is derived from its source node
     session: Session = Depends(get_session),
     uid: int = Depends(get_current_uid),
 ):
@@ -308,7 +310,7 @@ def swap_relationship_direction(
 @router.delete("/{rel_id}")
 def delete_relationship(
     rel_id: int,
-    graph_id: int,
+    graph_id: Optional[int] = None,  # legacy query param; rel's story is derived from its source node
     session: Session = Depends(get_session),
     uid: int = Depends(get_current_uid),
 ):
