@@ -102,15 +102,18 @@ export class StoryGraphStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
-    // ─── §5  SSM PARAMS (USER-CREATED — NOT managed by CDK) ────────────────
-    // CloudFormation CANNOT create SecureString parameters, AND a parameter's
-    // Type cannot be changed via `put-parameter --overwrite` (AWS rejects
-    // String→SecureString conversion). Cognito's {{resolve:ssm-secure:...}}
-    // also REQUIRES the param to already be SecureString at deploy time.
-    // Therefore CDK does NOT create these — the user creates them with the
-    // correct type BEFORE deploying (see RequiredSsmParams output / runbook).
+    // ─── §5  CREDENTIAL STORAGE (USER-CREATED — NOT managed by CDK) ────────
+    // Two stores, both populated by the user BEFORE deploy:
     //
-    //   String     (resolve via {{resolve:ssm:...}}):
+    //  - NON-SECRET ids/keys -> SSM Parameter Store, type String, resolved
+    //    via {{resolve:ssm:...}} (plain ssm refs are broadly supported).
+    //
+    //  - SECRETS (client secrets / Apple private key) -> AWS Secrets
+    //    Manager, resolved via {{resolve:secretsmanager:...}}. NOTE: CFN
+    //    does NOT allow {{resolve:ssm-secure:...}} in the Cognito IdP
+    //    client_secret property (it is on CFN's ssm-secure deny-list), but
+    //    secretsmanager dynamic references ARE supported there and stay
+    //    encrypted-at-rest + masked in templates.
     const ssmStringParamNames = [
       '/storygraph/oauth/google/client_id',
       '/storygraph/oauth/apple/client_id',
@@ -118,32 +121,37 @@ export class StoryGraphStack extends cdk.Stack {
       '/storygraph/oauth/apple/key_id',
       '/storygraph/oauth/microsoft/client_id',
     ];
-    //   SecureString (resolve via {{resolve:ssm-secure:...}}):
-    const ssmSecureParamNames = [
+    const secretsManagerNames = [
       '/storygraph/oauth/google/client_secret',
       '/storygraph/oauth/apple/private_key',
       '/storygraph/oauth/microsoft/client_secret',
     ];
 
     // ─── §6  COGNITO ───────────────────────────────────────────────────────
-    // IdP credentials are referenced only via CloudFormation dynamic
-    // references — real secrets never appear in CDK source or synth output.
+    // Non-secret ids: plain SSM String dynamic references.
     const googleClientId =
       '{{resolve:ssm:/storygraph/oauth/google/client_id}}';
-    const googleClientSecret =
-      '{{resolve:ssm-secure:/storygraph/oauth/google/client_secret}}';
     const appleClientId =
       '{{resolve:ssm:/storygraph/oauth/apple/client_id}}';
     const appleTeamId =
       '{{resolve:ssm:/storygraph/oauth/apple/team_id}}';
     const appleKeyId =
       '{{resolve:ssm:/storygraph/oauth/apple/key_id}}';
-    const applePrivateKey =
-      '{{resolve:ssm-secure:/storygraph/oauth/apple/private_key}}';
     const msClientId =
       '{{resolve:ssm:/storygraph/oauth/microsoft/client_id}}';
+    // Secrets: Secrets Manager. CDK SecretValue.secretsManager() emits the
+    // proper {{resolve:secretsmanager:NAME:SecretString:::}} token — the
+    // real value never appears in source, synth, or the CFN template.
+    const googleClientSecret = cdk.SecretValue.secretsManager(
+      '/storygraph/oauth/google/client_secret',
+    );
+    const applePrivateKey = cdk.SecretValue.secretsManager(
+      '/storygraph/oauth/apple/private_key',
+    );
+    // The OIDC provider's clientSecret prop is a plain string, so pass the
+    // resolve token literally (CFN resolves it at deploy, masked).
     const msClientSecret =
-      '{{resolve:ssm-secure:/storygraph/oauth/microsoft/client_secret}}';
+      '{{resolve:secretsmanager:/storygraph/oauth/microsoft/client_secret:SecretString:::}}';
 
     // Pre-Sign-up Lambda — auto-confirm + auto-verify email for FEDERATED
     // sign-ups ONLY (triggerSource PreSignUp_ExternalProvider). This closes
@@ -210,7 +218,7 @@ export class StoryGraphStack extends cdk.Stack {
       {
         userPool,
         clientId: googleClientId,
-        clientSecretValue: cdk.SecretValue.unsafePlainText(googleClientSecret),
+        clientSecretValue: googleClientSecret,
         scopes: ['openid', 'email', 'profile'],
         // NOTE: Cognito L2 AttributeMapping has no email_verified target;
         // forcing it requires a Pre-Sign-up Lambda (Phase 5 follow-up).
@@ -231,7 +239,7 @@ export class StoryGraphStack extends cdk.Stack {
           clientId: appleClientId,
           teamId: appleTeamId,
           keyId: appleKeyId,
-          privateKeyValue: cdk.SecretValue.unsafePlainText(applePrivateKey),
+          privateKeyValue: applePrivateKey,
           scopes: ['email', 'name'],
           attributeMapping: {
             email: cognito.ProviderAttribute.APPLE_EMAIL,
@@ -466,10 +474,10 @@ export class StoryGraphStack extends cdk.Stack {
         'Create BEFORE deploy: aws ssm put-parameter --name <n> --value <v> --type String',
     });
 
-    new cdk.CfnOutput(this, 'RequiredSsmSecureParams', {
-      value: ssmSecureParamNames.join(', '),
+    new cdk.CfnOutput(this, 'RequiredSecretsManagerSecrets', {
+      value: secretsManagerNames.join(', '),
       description:
-        'Create BEFORE deploy: aws ssm put-parameter --name <n> --value <v> --type SecureString',
+        'Create BEFORE deploy: aws secretsmanager create-secret --name <n> --secret-string <v>',
     });
   }
 }

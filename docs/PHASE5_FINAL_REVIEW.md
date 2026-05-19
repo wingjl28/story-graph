@@ -39,8 +39,11 @@ bounded and documented.
 ## Secrets & IAM
 
 - No secret in source, synth, or CFN template: DB credential =
-  Secrets Manager managed; OAuth secrets = `{{resolve:ssm-secure}}`
-  tokens; user creates SSM params out-of-band.
+  Secrets Manager managed; OAuth client secrets = AWS Secrets Manager via
+  `{{resolve:secretsmanager:...}}` (CFN forbids `ssm-secure` in the
+  Cognito IdP property — corrected post-deploy-test; non-secret OAuth ids
+  remain plain-SSM String). User creates both stores out-of-band; no
+  secret in source/synth/template.
 - App Runner instance role: resource-scoped to the one DB secret + its
   KMS + `parameter/storygraph/*`. **Zero `*` resource or action.**
 - `RETAIN` on RDS / ECR / Cognito so a stack delete cannot destroy data

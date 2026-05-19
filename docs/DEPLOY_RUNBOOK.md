@@ -103,39 +103,44 @@ For **each**, set the authorized redirect URI to `$IDP_REDIRECT`.
   create a Key (.p8) for Sign in with Apple → note Key ID + Team ID + the
   .p8 private key contents.
 
-## 2. Create the SSM parameters BEFORE deploying
+## 2. Create credentials BEFORE deploying
 
-CDK does **not** create these (CFN can't make SecureString, and Cognito
-resolves them at deploy). Correct types matter.
+Two stores (CDK creates neither — Cognito resolves them at deploy):
+- **Non-secret ids/keys → SSM Parameter Store, `--type String`**
+- **Secrets (client secrets, Apple private key) → AWS Secrets Manager**
+  (CloudFormation forbids encrypted-SSM refs in the Cognito IdP property;
+  Secrets Manager refs are supported and stay encrypted/masked.)
 
 > **Windows/Git Bash:** you must have run `export MSYS_NO_PATHCONV=1`
 > (§0.1) or every `--name /storygraph/...` becomes a mangled
-> `C:/Program Files/Git/...` path and fails. Also requires the IAM user
-> to actually have `AdministratorAccess` attached (verify:
-> `aws iam list-attached-user-policies --user-name <you>`), else you get
-> `AccessDeniedException ... ssm:PutParameter`.
-> Prefer the **AWS Console → Systems Manager → Parameter Store → Create
-> parameter** if you'd rather avoid the CLI for these 8 — names must be
-> exactly as below, types as labelled.
+> `C:/Program Files/Git/...` path and fails. The IAM user also needs
+> `AdministratorAccess` (verify:
+> `aws iam list-attached-user-policies --user-name <you>`).
+> Console alternative: SSM → Parameter Store, and Secrets Manager →
+> Store a new secret (type "Other / plaintext"). Names must be exact.
 
-**Google is the only provider required to launch.** Apple and Microsoft
-are opt-in (see §3) — create their params only when you enable them.
+**Google is the only provider required to launch.** Apple/Microsoft are
+opt-in (§3) — create their credentials only when you enable them.
 
 ```bash
 # === REQUIRED NOW (Google only) ===
-aws ssm put-parameter --type String       --name /storygraph/oauth/google/client_id      --value "<google_client_id>"
-aws ssm put-parameter --type SecureString --name /storygraph/oauth/google/client_secret  --value "<google_secret>"
+aws ssm put-parameter --type String --name /storygraph/oauth/google/client_id --value "<google_client_id>"
+aws secretsmanager create-secret --name /storygraph/oauth/google/client_secret --secret-string "<google_secret>"
 
 # === LATER, only if you enable Apple (§3) ===
-aws ssm put-parameter --type String       --name /storygraph/oauth/apple/client_id       --value "<apple_services_id>"
-aws ssm put-parameter --type String       --name /storygraph/oauth/apple/team_id         --value "<apple_team_id>"
-aws ssm put-parameter --type String       --name /storygraph/oauth/apple/key_id          --value "<apple_key_id>"
-aws ssm put-parameter --type SecureString --name /storygraph/oauth/apple/private_key      --value "$(cat AuthKey_XXXX.p8)"
+aws ssm put-parameter --type String --name /storygraph/oauth/apple/client_id --value "<apple_services_id>"
+aws ssm put-parameter --type String --name /storygraph/oauth/apple/team_id   --value "<apple_team_id>"
+aws ssm put-parameter --type String --name /storygraph/oauth/apple/key_id    --value "<apple_key_id>"
+aws secretsmanager create-secret --name /storygraph/oauth/apple/private_key --secret-string "$(cat AuthKey_XXXX.p8)"
 
 # === LATER, only if you enable Microsoft (§3) ===
-aws ssm put-parameter --type String       --name /storygraph/oauth/microsoft/client_id     --value "<ms_client_id>"
-aws ssm put-parameter --type SecureString --name /storygraph/oauth/microsoft/client_secret --value "<ms_secret>"
+aws ssm put-parameter --type String --name /storygraph/oauth/microsoft/client_id --value "<ms_client_id>"
+aws secretsmanager create-secret --name /storygraph/oauth/microsoft/client_secret --secret-string "<ms_secret>"
 ```
+
+> Updating a secret later: `aws secretsmanager put-secret-value --secret-id
+> <name> --secret-string <new>` then redeploy. Each Secrets Manager secret
+> costs ~$0.40/mo.
 
 ## 3. Bootstrap + first deploy
 
