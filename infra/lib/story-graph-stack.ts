@@ -76,7 +76,7 @@ export class StoryGraphStack extends cdk.Stack {
     // is added after connectorSg is created (below, in §7).
     const dbSg = new ec2.SecurityGroup(this, 'DbSg', {
       vpc,
-      description: 'Story Graph RDS – no public inbound',
+      description: 'Story Graph RDS - no public inbound',
       allowAllOutbound: false,
     });
 
@@ -320,7 +320,7 @@ export class StoryGraphStack extends cdk.Stack {
     // VPC connector security group — egress only (App Runner → RDS)
     const connectorSg = new ec2.SecurityGroup(this, 'ConnectorSg', {
       vpc,
-      description: 'App Runner VPC connector – outbound to RDS only',
+      description: 'App Runner VPC connector - outbound to RDS only',
       allowAllOutbound: true,
     });
 
@@ -328,7 +328,7 @@ export class StoryGraphStack extends cdk.Stack {
     dbSg.addIngressRule(
       connectorSg,
       ec2.Port.tcp(5432),
-      'App Runner connector → Postgres',
+      'App Runner connector to Postgres',
     );
 
     const vpcConnector = new apprunner.VpcConnector(this, 'VpcConn', {
@@ -352,7 +352,7 @@ export class StoryGraphStack extends cdk.Stack {
     // Instance role — least-privilege (container runtime permissions)
     const instanceRole = new iam.Role(this, 'AppRunnerInstanceRole', {
       assumedBy: new iam.ServicePrincipal('tasks.apprunner.amazonaws.com'),
-      description: 'Story Graph App Runner instance role — least privilege',
+      description: 'Story Graph App Runner instance role - least privilege',
     });
 
     // SecretsManager: GetSecretValue scoped only to the RDS master secret.
@@ -374,7 +374,7 @@ export class StoryGraphStack extends cdk.Stack {
     // Access role — ECR pull using AWS-managed policy
     const accessRole = new iam.Role(this, 'AppRunnerAccessRole', {
       assumedBy: new iam.ServicePrincipal('build.apprunner.amazonaws.com'),
-      description: 'Story Graph App Runner access role — ECR pull',
+      description: 'Story Graph App Runner access role - ECR pull',
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName(
           'service-role/AWSAppRunnerServicePolicyForECRAccess',
@@ -438,7 +438,7 @@ export class StoryGraphStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'AppRunnerServiceUrl', {
       value: service.serviceUrl,
       description:
-        'App Runner service URL — use as: npx cdk deploy -c appUrl=https://<value>',
+        'App Runner service URL - use as: npx cdk deploy -c appUrl=https://<value>',
     });
 
     new cdk.CfnOutput(this, 'CognitoUserPoolId', {
