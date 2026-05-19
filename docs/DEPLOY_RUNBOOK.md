@@ -20,10 +20,20 @@ installed with Git for Windows (you already ran `git clone`, so you have it):
   (In Git Bash, `C:\Users\...` is written `/c/Users/...`.)
 - Run **every** command block in this file from Git Bash. (WSL Ubuntu also
   works if you prefer.)
+- **Critical Git-Bash fix — run this FIRST, before anything else:**
+  ```bash
+  export MSYS_NO_PATHCONV=1
+  ```
+  Without it, Git Bash silently rewrites any argument starting with `/`
+  into a Windows path (e.g. `--name /storygraph/...` becomes
+  `C:/Program Files/Git/storygraph/...`), which breaks every
+  `aws ssm put-parameter --name /...` and IAM ARN in this runbook.
+  (Not needed on WSL/Linux/macOS.)
 
-> The `export` variables below live only for the current terminal session.
-> Keep one Git Bash window open for the whole runbook. If you close it,
-> re-run the §0.4 block before continuing later steps.
+> Both `export` lines above (and the §0.4 vars) live only for the current
+> terminal session. Keep one Git Bash window open for the whole runbook.
+> If you close it, re-run `export MSYS_NO_PATHCONV=1` and the §0.4 block
+> before continuing.
 
 ### 0.2 Verify the AWS CLI is configured
 
@@ -97,6 +107,16 @@ For **each**, set the authorized redirect URI to `$IDP_REDIRECT`.
 
 CDK does **not** create these (CFN can't make SecureString, and Cognito
 resolves them at deploy). Correct types matter.
+
+> **Windows/Git Bash:** you must have run `export MSYS_NO_PATHCONV=1`
+> (§0.1) or every `--name /storygraph/...` becomes a mangled
+> `C:/Program Files/Git/...` path and fails. Also requires the IAM user
+> to actually have `AdministratorAccess` attached (verify:
+> `aws iam list-attached-user-policies --user-name <you>`), else you get
+> `AccessDeniedException ... ssm:PutParameter`.
+> Prefer the **AWS Console → Systems Manager → Parameter Store → Create
+> parameter** if you'd rather avoid the CLI for these 8 — names must be
+> exactly as below, types as labelled.
 
 ```bash
 # --- String params ---
