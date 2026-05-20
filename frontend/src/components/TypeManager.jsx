@@ -119,7 +119,7 @@ function TypeForm({ initial, onSave, onCancel, activeGraphId }) {
   const [fontColor, setFontColor] = useState(initial?.font_color || '#ffffff')
   const [description, setDescription] = useState(initial?.description || '')
   const [isDateType, setIsDateType] = useState(initial?.is_date_type ?? false)
-  const [scope, setScope] = useState(initial?.scope || 'shared')
+  const [scope, setScope] = useState(initial?.scope || 'story')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 

@@ -11,6 +11,7 @@ import MultiSelectPanel from './components/MultiSelectPanel'
 import ContextMenu from './components/ContextMenu'
 import Timeline from './components/Timeline'
 import QuickTagMenu from './components/QuickTagMenu'
+import QuickRelBar from './components/QuickRelBar'
 import LoginGate from './components/LoginGate'
 import ShareDialog from './components/ShareDialog'
 import { api, setAuthToken, setOnAuthError } from './api'
@@ -61,6 +62,11 @@ export default function App() {
   const [hiddenTypes, setHiddenTypes] = useState(new Set())
   const [hiddenRelLabels, setHiddenRelLabels] = useState(new Set())
   const [hiddenTagNames, setHiddenTagNames] = useState(new Set())
+  // Solo sets: when non-empty, only these items are shown (others hidden)
+  const [soloTypes, setSoloTypes] = useState(new Set())
+  const [soloRelLabels, setSoloRelLabels] = useState(new Set())
+  const [soloNodeIds, setSoloNodeIds] = useState(new Set())
+  const [soloTagNames, setSoloTagNames] = useState(new Set())
   const [allTags, setAllTags] = useState([])
   const [pendingNodePosition, setPendingNodePosition] = useState(null)
   const [bgContextMenu, setBgContextMenu] = useState(null)
@@ -77,10 +83,12 @@ export default function App() {
   const [editingNode, setEditingNode] = useState(null)
   const [multiSelectedNodeIds, setMultiSelectedNodeIds] = useState([])
   const [selectionMode, setSelectionMode] = useState('normal')
+  const [quickRelMode, setQuickRelMode] = useState(false)
 
   const [contextMenu, setContextMenu] = useState(null) // { type: 'node'|'edge', data, x, y }
   const [error, setError] = useState(null)
   const graphRef = useRef(null)
+  const quickRelRef = useRef(null)
 
   // Autocomplete pools derived from live graph data
   const existingRelLabels = useMemo(
@@ -98,33 +106,81 @@ export default function App() {
     return [...keys].sort()
   }, [graphData.edges])
 
-  // Nodes hidden by the active filters (type filter + text/scope + tag filter)
+  // Nodes hidden by the active filters (type filter + text/scope + tag filter + solo states)
   const filterHiddenNodeIds = useMemo(() => {
     const ids = new Set()
     const activeNodeFilters = filters.filter(f => f.text && f.searchNodes)
-    if (activeNodeFilters.length === 0 && hiddenTypes.size === 0 && hiddenTagNames.size === 0) return ids
-    graphData.nodes.forEach(({ data: n }) => {
-      if (hiddenTypes.has(n.type)) { ids.add(String(n.id)); return }
-      if (hiddenTagNames.size > 0 && n.tags?.some(t => hiddenTagNames.has(t.name))) {
-        ids.add(String(n.id)); return
+
+    // Build set of node IDs that participate in solo'd rel labels
+    let relSoloNodeIds = null
+    if (soloRelLabels.size > 0) {
+      relSoloNodeIds = new Set()
+      graphData.edges.forEach(({ data: e }) => {
+        if (soloRelLabels.has(e.label)) {
+          relSoloNodeIds.add(String(e.source))
+          relSoloNodeIds.add(String(e.target))
+        }
+      })
+    }
+
+    // When filtering (hiding) rels, also hide nodes with no visible rels
+    const hiddenRelNodeIds = new Set()
+    if (hiddenRelLabels.size > 0) {
+      const nodesWithVisibleRel = new Set()
+      graphData.edges.forEach(({ data: e }) => {
+        if (!hiddenRelLabels.has(e.label)) {
+          nodesWithVisibleRel.add(String(e.source))
+          nodesWithVisibleRel.add(String(e.target))
+        }
+      })
+      if (graphData.edges.length > 0) {
+        graphData.nodes.forEach(({ data: n }) => {
+          const hasAnyRel = graphData.edges.some(({ data: e }) =>
+            String(e.source) === String(n.id) || String(e.target) === String(n.id)
+          )
+          if (hasAnyRel && !nodesWithVisibleRel.has(String(n.id))) {
+            hiddenRelNodeIds.add(String(n.id))
+          }
+        })
       }
+    }
+
+    graphData.nodes.forEach(({ data: n }) => {
+      const nid = String(n.id)
+      // Solo node filter: if any nodes are solo'd, hide all others
+      if (soloNodeIds.size > 0 && !soloNodeIds.has(nid)) { ids.add(nid); return }
+      // Solo type filter
+      if (soloTypes.size > 0 && !soloTypes.has(n.type)) { ids.add(nid); return }
+      // Solo tag filter
+      if (soloTagNames.size > 0 && !n.tags?.some(t => soloTagNames.has(t.name))) { ids.add(nid); return }
+      // Solo rel filter: only show nodes connected by solo'd rels
+      if (relSoloNodeIds && !relSoloNodeIds.has(nid)) { ids.add(nid); return }
+      // Hidden type
+      if (hiddenTypes.has(n.type)) { ids.add(nid); return }
+      // Hidden tag
+      if (hiddenTagNames.size > 0 && n.tags?.some(t => hiddenTagNames.has(t.name))) { ids.add(nid); return }
+      // Hidden rel nodes
+      if (hiddenRelNodeIds.has(nid)) { ids.add(nid); return }
+      // Text filters
       for (const f of activeNodeFilters) {
-        if (!wildcardMatch(f.text, n.label)) { ids.add(String(n.id)); break }
+        if (!wildcardMatch(f.text, n.label)) { ids.add(nid); break }
       }
     })
     return ids
-  }, [graphData.nodes, filters, hiddenTypes, hiddenTagNames])
+  }, [graphData.nodes, graphData.edges, filters, hiddenTypes, hiddenTagNames, soloTypes, soloRelLabels, soloNodeIds, soloTagNames, hiddenRelLabels])
 
-  // Edges hidden by the active filters (rel text filter)
+  // Edges hidden by the active filters (rel text filter + solo state)
   const filterHiddenEdgeIds = useMemo(() => {
+    const ids = new Set()
     const activeRelFilters = filters.filter(f => f.text && f.searchRels)
-    if (activeRelFilters.length === 0) return new Set()
-    return new Set(
-      graphData.edges
-        .filter(({ data: e }) => activeRelFilters.some(f => !wildcardMatch(f.text, e.label)))
-        .map(({ data: e }) => e.id),
-    )
-  }, [graphData.edges, filters])
+    graphData.edges.forEach(({ data: e }) => {
+      // Solo rel filter
+      if (soloRelLabels.size > 0 && !soloRelLabels.has(e.label)) { ids.add(e.id); return }
+      // Text filters
+      if (activeRelFilters.some(f => !wildcardMatch(f.text, e.label))) { ids.add(e.id) }
+    })
+    return ids
+  }, [graphData.edges, filters, soloRelLabels])
 
   // Combined: manual hides + filter hides
   const allHiddenNodeIds = useMemo(
@@ -220,11 +276,15 @@ export default function App() {
 
   // ── Selection ──────────────────────────────────────────────
   const handleNodeClick = useCallback(async (nodeData) => {
+    if (quickRelMode && quickRelRef.current) {
+      quickRelRef.current.handleNodeClick(nodeData.id)
+      return
+    }
     setContextMenu(null)
     setMultiSelectedNodeIds([])
     setSelected({ type: 'node', id: nodeData.id, data: nodeData })
     await refreshNodeRels(nodeData.id)
-  }, [refreshNodeRels])
+  }, [refreshNodeRels, quickRelMode])
 
   const handleEdgeClick = useCallback((edgeData) => {
     setContextMenu(null)
@@ -280,6 +340,10 @@ export default function App() {
     setFilters([])
     setHiddenTypes(new Set())
     setHiddenTagNames(new Set())
+    setSoloTypes(new Set())
+    setSoloRelLabels(new Set())
+    setSoloNodeIds(new Set())
+    setSoloTagNames(new Set())
   }, [])
 
   const addFilter = useCallback(() => {
@@ -291,34 +355,67 @@ export default function App() {
   const removeFilter = useCallback((id) => {
     setFilters(prev => prev.filter(f => f.id !== id))
   }, [])
-  const toggleHideType = useCallback((typeName) => {
+  // 3-phase cycle: normal → solo → hidden → normal
+  const cycleType = useCallback((typeName) => {
+    setSoloTypes(prev => {
+      if (prev.has(typeName)) {
+        const next = new Set(prev); next.delete(typeName)
+        setHiddenTypes(hp => { const n = new Set(hp); n.add(typeName); return n })
+        return next
+      }
+      return prev
+    })
     setHiddenTypes(prev => {
-      const next = new Set(prev)
-      if (next.has(typeName)) { next.delete(typeName) } else { next.add(typeName) }
-      return next
+      if (prev.has(typeName)) {
+        const next = new Set(prev); next.delete(typeName); return next
+      }
+      return prev
+    })
+    setSoloTypes(prev => {
+      if (!prev.has(typeName)) {
+        return new Set(prev).add(typeName)
+      }
+      return prev
     })
   }, [])
-  const toggleHideRelLabel = useCallback((label) => {
-    setHiddenRelLabels(prev => { const n = new Set(prev); n.has(label) ? n.delete(label) : n.add(label); return n })
+  // Simplified: direct triple-state cycle
+  const cycleItemState = useCallback((soloSet, setSolo, hiddenSet, setHidden, item) => {
+    if (soloSet.has(item)) {
+      setSolo(prev => { const n = new Set(prev); n.delete(item); return n })
+      setHidden(prev => new Set(prev).add(item))
+    } else if (hiddenSet.has(item)) {
+      setHidden(prev => { const n = new Set(prev); n.delete(item); return n })
+    } else {
+      setSolo(prev => new Set(prev).add(item))
+    }
   }, [])
+  const toggleHideType = useCallback((typeName) => {
+    cycleItemState(soloTypes, setSoloTypes, hiddenTypes, setHiddenTypes, typeName)
+  }, [soloTypes, hiddenTypes, cycleItemState])
+  const toggleHideRelLabel = useCallback((label) => {
+    cycleItemState(soloRelLabels, setSoloRelLabels, hiddenRelLabels, setHiddenRelLabels, label)
+  }, [soloRelLabels, hiddenRelLabels, cycleItemState])
   const hideAllNodes = useCallback(() => {
     setHiddenNodeIds(new Set(graphData.nodes.map(n => String(n.data.id))))
+    setSoloNodeIds(new Set())
   }, [graphData.nodes])
-  const unhideAllNodes = useCallback(() => setHiddenNodeIds(new Set()), [])
+  const unhideAllNodes = useCallback(() => { setHiddenNodeIds(new Set()); setSoloNodeIds(new Set()) }, [])
   const hideAllRelLabels = useCallback(() => {
     const labels = [...new Set(graphData.edges.map(e => e.data.label))]
     setHiddenRelLabels(new Set(labels))
+    setSoloRelLabels(new Set())
   }, [graphData.edges])
-  const unhideAllRelLabels = useCallback(() => setHiddenRelLabels(new Set()), [])
+  const unhideAllRelLabels = useCallback(() => { setHiddenRelLabels(new Set()); setSoloRelLabels(new Set()) }, [])
   const hideAllTypes = useCallback(() => {
     setHiddenTypes(new Set(nodeTypes.map(t => t.name)))
+    setSoloTypes(new Set())
   }, [nodeTypes])
-  const unhideAllTypes = useCallback(() => setHiddenTypes(new Set()), [])
+  const unhideAllTypes = useCallback(() => { setHiddenTypes(new Set()); setSoloTypes(new Set()) }, [])
   const toggleHideTagName = useCallback((name) => {
-    setHiddenTagNames(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n })
-  }, [])
-  const hideAllTagNames = useCallback(() => setHiddenTagNames(new Set(allTags.map(t => t.name))), [allTags])
-  const unhideAllTagNames = useCallback(() => setHiddenTagNames(new Set()), [])
+    cycleItemState(soloTagNames, setSoloTagNames, hiddenTagNames, setHiddenTagNames, name)
+  }, [soloTagNames, hiddenTagNames, cycleItemState])
+  const hideAllTagNames = useCallback(() => { setHiddenTagNames(new Set(allTags.map(t => t.name))); setSoloTagNames(new Set()) }, [allTags])
+  const unhideAllTagNames = useCallback(() => { setHiddenTagNames(new Set()); setSoloTagNames(new Set()) }, [])
 
   const handleSwitchGraph = useCallback(async (gid) => {
     graphRef.current?.resetGraph()
@@ -329,6 +426,11 @@ export default function App() {
     setHiddenNodeIds(new Set())
     setHiddenRelLabels(new Set())
     setHiddenTagNames(new Set())
+    setHiddenTypes(new Set())
+    setSoloTypes(new Set())
+    setSoloRelLabels(new Set())
+    setSoloNodeIds(new Set())
+    setSoloTagNames(new Set())
     setFilters([])
     try {
       const [graphData] = await Promise.all([
@@ -424,18 +526,16 @@ export default function App() {
     }
   }
 
-  // ── Hide/unhide individual node ───────────────────────────
+  // 3-phase toggle for individual nodes: normal → solo → hidden → normal
   const toggleHideNode = useCallback((nodeId) => {
     const id = String(nodeId)
-    setHiddenNodeIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-    setSelected((prev) => (prev?.type === 'node' && String(prev.id) === id ? null : prev))
-    setNodeRelationships([])
-  }, [])
+    cycleItemState(soloNodeIds, setSoloNodeIds, hiddenNodeIds, setHiddenNodeIds, id)
+    if (hiddenNodeIds.has(id) || soloNodeIds.has(id)) {
+      // will become visible again — no need to deselect
+    } else {
+      // going to solo → keep selected
+    }
+  }, [soloNodeIds, hiddenNodeIds, cycleItemState])
 
   // ── Mutations ─────────────────────────────────────────────
   const afterNodeSaved = async (keepOpen = false, createdNode = null) => {
@@ -532,18 +632,22 @@ export default function App() {
         onHideAllNodes={hideAllNodes}
         onUnhideAllNodes={unhideAllNodes}
         hiddenRelLabels={hiddenRelLabels}
+        soloRelLabels={soloRelLabels}
         onToggleHideRelLabel={toggleHideRelLabel}
         onHideAllRelLabels={hideAllRelLabels}
         onUnhideAllRelLabels={unhideAllRelLabels}
         hiddenTypes={hiddenTypes}
+        soloTypes={soloTypes}
         onToggleHideType={toggleHideType}
         onHideAllTypes={hideAllTypes}
         onUnhideAllTypes={unhideAllTypes}
         allTags={allTags}
         hiddenTagNames={hiddenTagNames}
+        soloTagNames={soloTagNames}
         onToggleHideTagName={toggleHideTagName}
         onHideAllTagNames={hideAllTagNames}
         onUnhideAllTagNames={unhideAllTagNames}
+        soloNodeIds={soloNodeIds}
         filters={filters}
         onAddFilter={addFilter}
         onUpdateFilter={updateFilter}
@@ -560,6 +664,7 @@ export default function App() {
         onShare={() => setShowShareDialog(true)}
         userEmail={AUTH_ENABLED ? authUser?.profile?.email : undefined}
         onSignOut={AUTH_ENABLED ? () => authObj?.removeUser() : undefined}
+        onOpenTypeManager={() => setShowSettings(true)}
       />
 
       <main className="graph-area">
@@ -598,19 +703,28 @@ export default function App() {
           onBoxSelectDone={() => setSelectionMode('normal')}
           onBoxSelectToggle={() => setSelectionMode(m => m === 'box' ? 'normal' : 'box')}
           graphId={activeGraphId}
+          loadPositions={async (gid) => {
+            try { return await api.getPositions(gid) } catch { return {} }
+          }}
+          savePositions={async (gid, positions) => {
+            try { await api.savePositions(gid, positions) } catch { /* silent */ }
+          }}
         />
 
-        <div className="graph-toolbar">
-          <button className="toolbar-btn" onClick={() => graphRef.current?.fitGraph()}>Fit All</button>
-          <button className="toolbar-btn" onClick={() => graphRef.current?.relayout()}>Relayout</button>
-          <button
-            className={`toolbar-btn${selectionMode === 'box' ? ' active' : ''}`}
-            onClick={() => setSelectionMode((m) => m === 'box' ? 'normal' : 'box')}
-            title={selectionMode === 'box' ? 'Exit box-select mode' : 'Box-select nodes'}
-          >
-            ⬚ Select
-          </button>
-        </div>
+        {quickRelMode && (
+          <QuickRelBar
+            ref={quickRelRef}
+            nodes={graphData.nodes.map(n => n.data)}
+            existingLabels={existingRelLabels}
+            selectedNodeId={selected?.type === 'node' ? selected.id : null}
+            onDone={async (count) => {
+              setQuickRelMode(false)
+              await loadGraph()
+            }}
+            onCancel={() => setQuickRelMode(false)}
+          />
+        )}
+
       </main>
 
       {multiSelectedNodeIds.length > 1 && (

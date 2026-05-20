@@ -78,6 +78,8 @@ export const api = {
 
   // Graph
   getGraph: (graphId = 1) => get(`/graph?graph_id=${graphId}`),
+  getPositions: (graphId) => get(`/graph/positions?graph_id=${graphId}`),
+  savePositions: (graphId, positions) => put(`/graph/positions?graph_id=${graphId}`, positions),
 
   // Story Graphs
   getStoryGraphs: () => get('/story-graphs'),

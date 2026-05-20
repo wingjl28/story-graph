@@ -45,6 +45,7 @@ export default function AddNodeModal({
   const [showNewType, setShowNewType] = useState(false)
   const [newTypeName, setNewTypeName] = useState('')
   const [newTypeColor, setNewTypeColor] = useState('#6366f1')
+  const [newTypeFontColor, setNewTypeFontColor] = useState('#ffffff')
   const [creatingType, setCreatingType] = useState(false)
 
   // Pending relationships (only used when creating, not editing)
@@ -99,7 +100,7 @@ export default function AddNodeModal({
     if (!newTypeName.trim()) return
     setCreatingType(true)
     try {
-      const newType = await api.createNodeType({ name: newTypeName.trim(), color: newTypeColor })
+      const newType = await api.createNodeType({ name: newTypeName.trim(), color: newTypeColor, font_color: newTypeFontColor, scope: 'story', graph_id: graphId })
       setExtraTypes(prev => [...prev, newType])
       setTypeId(String(newType.id))
       setNewTypeName('')
@@ -223,6 +224,10 @@ export default function AddNodeModal({
                     style={{ flex: 1 }}
                   />
                   <input type="color" value={newTypeColor} onChange={e => setNewTypeColor(e.target.value)}
+                    title="Background color"
+                    style={{ width: 32, height: 32, padding: 2, border: '1px solid #4a5568', borderRadius: 4, cursor: 'pointer', background: 'none' }} />
+                  <input type="color" value={newTypeFontColor} onChange={e => setNewTypeFontColor(e.target.value)}
+                    title="Font color"
                     style={{ width: 32, height: 32, padding: 2, border: '1px solid #4a5568', borderRadius: 4, cursor: 'pointer', background: 'none' }} />
                   <button type="button" className="btn-icon" onClick={() => setNewTypeColor(randomColor())} title="Random color">
                     <Icon icon="carbon:shuffle" width={14} />

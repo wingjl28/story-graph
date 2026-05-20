@@ -31,18 +31,22 @@ export default function Sidebar({
   onHideAllNodes,
   onUnhideAllNodes,
   hiddenRelLabels,
+  soloRelLabels,
   onToggleHideRelLabel,
   onHideAllRelLabels,
   onUnhideAllRelLabels,
   hiddenTypes,
+  soloTypes,
   onToggleHideType,
   onHideAllTypes,
   onUnhideAllTypes,
   allTags,
   hiddenTagNames,
+  soloTagNames,
   onToggleHideTagName,
   onHideAllTagNames,
   onUnhideAllTagNames,
+  soloNodeIds,
   filters,
   onAddFilter,
   onUpdateFilter,
@@ -57,6 +61,7 @@ export default function Sidebar({
   onShare,
   userEmail,
   onSignOut,
+  onOpenTypeManager,
 }) {
   const [collapsed, setCollapsed] = useState({ filter: false, nodes: false, rels: false, types: false, tags: false })
   const [sort, setSort] = useState({ nodes: 'alpha', rels: 'alpha', types: 'alpha', tags: 'alpha' })
@@ -230,22 +235,24 @@ export default function Sidebar({
           <div className="sb-chips">
             {nodes.length === 0 && <div className="empty-state" style={{ padding: '8px 4px', fontSize: 12 }}>No nodes yet</div>}
             {sortedNodes.map((n) => {
-              const isHidden = allHiddenNodeIds?.has(String(n.id))
+              const nid = String(n.id)
+              const isSolo = soloNodeIds?.has(nid)
+              const isHidden = allHiddenNodeIds?.has(nid)
               const isSelected = selectedNodeId === n.id
               return (
                 <button
                   key={n.id}
-                  className={`sb-chip${isHidden ? ' hidden' : ''}${isSelected ? ' selected' : ''}`}
+                  className={`sb-chip${isHidden ? ' hidden' : ''}${isSolo ? ' solo' : ''}${isSelected ? ' selected' : ''}`}
                   onClick={() => onNodeFocus(n.id)}
                 >
                   <span className="type-dot" style={{ background: n.color, flexShrink: 0 }} />
                   <span className="sb-chip-label">{n.label}</span>
                   <span
                     className="sb-chip-eye"
-                    title={isHidden ? 'Show' : 'Hide'}
+                    title={isSolo ? 'Solo (click to hide)' : isHidden ? 'Hidden (click to show)' : 'Click to solo'}
                     onClick={(e) => { e.stopPropagation(); onToggleHideNode(n.id) }}
                   >
-                    <Icon icon={isHidden ? 'carbon:view-off' : 'carbon:view'} width={10} />
+                    <Icon icon={isSolo ? 'carbon:star-filled' : isHidden ? 'carbon:view-off' : 'carbon:view'} width={10} />
                   </span>
                 </button>
               )
@@ -261,6 +268,9 @@ export default function Sidebar({
           onToggle={() => toggleSection('rels')}
           headerRight={
             <>
+              <button className="sb-action-btn" onClick={onAddRelationship} title="Add relationship">
+                <Icon icon="carbon:add" width={12} />
+              </button>
               <button className="sb-action-btn" onClick={onHideAllRelLabels} title="Hide all rels">
                 <Icon icon="carbon:view-off" width={12} />
               </button>
@@ -273,24 +283,19 @@ export default function Sidebar({
           <div className="sb-chips">
             {sortedRelLabels.length === 0 && <div className="empty-state" style={{ padding: '8px 4px', fontSize: 12 }}>No relationships yet</div>}
             {sortedRelLabels.map((rel) => {
+              const isSolo = soloRelLabels?.has(rel.label)
               const isHidden = hiddenRelLabels?.has(rel.label)
               return (
                 <button
                   key={rel.label}
-                  className={`sb-chip${isHidden ? ' hidden' : ''}`}
-                  title={rel.label}
-                  onClick={() => {}}
+                  className={`sb-chip${isHidden ? ' hidden' : ''}${isSolo ? ' solo' : ''}`}
+                  title={isSolo ? `Solo: ${rel.label} (click to hide)` : isHidden ? `Hidden: ${rel.label} (click to show)` : `Click to solo ${rel.label}`}
+                  onClick={() => onToggleHideRelLabel(rel.label)}
                 >
-                  <span className="type-dot" style={{ background: rel.color, flexShrink: 0 }} />
+                  <span className="type-dot" style={{ background: isHidden ? '#4a5568' : rel.color, flexShrink: 0 }} />
                   <span className="sb-chip-label">{rel.label}</span>
                   <span style={{ fontSize: 10, color: '#4a5568', marginRight: 4, flexShrink: 0 }}>{rel.count}</span>
-                  <span
-                    className="sb-chip-eye"
-                    title={isHidden ? 'Show' : 'Hide'}
-                    onClick={(e) => { e.stopPropagation(); onToggleHideRelLabel(rel.label) }}
-                  >
-                    <Icon icon={isHidden ? 'carbon:view-off' : 'carbon:view'} width={10} />
-                  </span>
+                  {isSolo && <Icon icon="carbon:star-filled" width={10} style={{ color: '#f6ad55', flexShrink: 0 }} />}
                 </button>
               )
             })}
@@ -305,6 +310,11 @@ export default function Sidebar({
           onToggle={() => toggleSection('types')}
           headerRight={
             <>
+              {onOpenTypeManager && (
+                <button className="sb-action-btn" onClick={onOpenTypeManager} title="Manage types">
+                  <Icon icon="carbon:add" width={12} />
+                </button>
+              )}
               <button className="sb-action-btn" onClick={onHideAllTypes} title="Hide all types">
                 <Icon icon="carbon:view-off" width={12} />
               </button>
@@ -317,16 +327,18 @@ export default function Sidebar({
           <div className="sb-chips">
             {nodeTypes.length === 0 && <div className="empty-state" style={{ padding: '8px 4px', fontSize: 12 }}>No types yet</div>}
             {sortedTypes.map((t) => {
+              const isSolo = soloTypes?.has(t.name)
               const isHidden = hiddenTypes?.has(t.name)
               return (
                 <button
                   key={t.id}
-                  className={`sb-chip sb-type-chip${isHidden ? ' hidden' : ''}`}
+                  className={`sb-chip sb-type-chip${isHidden ? ' hidden' : ''}${isSolo ? ' solo' : ''}`}
                   onClick={() => onToggleHideType(t.name)}
-                  title={isHidden ? `Show ${t.name}` : `Hide ${t.name}`}
+                  title={isSolo ? `Solo: ${t.name} (click to hide)` : isHidden ? `Hidden: ${t.name} (click to show)` : `Click to solo ${t.name}`}
                 >
                   <span className="type-dot" style={{ background: isHidden ? '#4a5568' : t.color, flexShrink: 0 }} />
                   <span className="sb-chip-label">{t.name}</span>
+                  {isSolo && <Icon icon="carbon:star-filled" width={10} style={{ color: '#f6ad55', flexShrink: 0 }} />}
                 </button>
               )
             })}
@@ -334,42 +346,43 @@ export default function Sidebar({
         </Section>
 
         {/* Tags section */}
-        {allTags && allTags.length > 0 && (
-          <Section
-            title="Tags"
-            badge={allTags.length}
-            collapsed={collapsed.tags}
-            onToggle={() => toggleSection('tags')}
-            headerRight={
-              <>
-                <button className="sb-action-btn" onClick={onHideAllTagNames} title="Hide all tags">
-                  <Icon icon="carbon:view-off" width={12} />
+        <Section
+          title="Tags"
+          badge={allTags.length}
+          collapsed={collapsed.tags}
+          onToggle={() => toggleSection('tags')}
+          headerRight={
+            <>
+              <button className="sb-action-btn" onClick={onHideAllTagNames} title="Hide all tags">
+                <Icon icon="carbon:view-off" width={12} />
+              </button>
+              <button className="sb-action-btn" onClick={onUnhideAllTagNames} title="Show all tags">
+                <Icon icon="carbon:view" width={12} />
+              </button>
+            </>
+          }
+        >
+          <div className="sb-chips">
+            {(!allTags || allTags.length === 0) && <div className="empty-state" style={{ padding: '8px 4px', fontSize: 12 }}>No tags yet</div>}
+            {allTags.map((t) => {
+              const isSolo = soloTagNames?.has(t.name)
+              const isHidden = hiddenTagNames?.has(t.name)
+              return (
+                <button
+                  key={t.id}
+                  className={`sb-chip sb-type-chip${isHidden ? ' hidden' : ''}${isSolo ? ' solo' : ''}`}
+                  onClick={() => onToggleHideTagName(t.name)}
+                  title={isSolo ? `Solo: ${t.name} (click to hide)` : isHidden ? `Hidden: ${t.name} (click to show)` : `Click to solo ${t.name}`}
+                >
+                  <span className="type-dot" style={{ background: isHidden ? '#4a5568' : t.color, flexShrink: 0 }} />
+                  <span className="sb-chip-label">{t.name}</span>
+                  <span style={{ fontSize: 10, color: '#4a5568', marginRight: 2, flexShrink: 0 }}>{t.count}</span>
+                  {isSolo && <Icon icon="carbon:star-filled" width={10} style={{ color: '#f6ad55', flexShrink: 0 }} />}
                 </button>
-                <button className="sb-action-btn" onClick={onUnhideAllTagNames} title="Show all tags">
-                  <Icon icon="carbon:view" width={12} />
-                </button>
-              </>
-            }
-          >
-            <div className="sb-chips">
-              {allTags.map((t) => {
-                const isHidden = hiddenTagNames?.has(t.name)
-                return (
-                  <button
-                    key={t.id}
-                    className={`sb-chip sb-type-chip${isHidden ? ' hidden' : ''}`}
-                    onClick={() => onToggleHideTagName(t.name)}
-                    title={isHidden ? `Show nodes tagged ${t.name}` : `Hide nodes tagged ${t.name}`}
-                  >
-                    <span className="type-dot" style={{ background: isHidden ? '#4a5568' : t.color, flexShrink: 0 }} />
-                    <span className="sb-chip-label">{t.name}</span>
-                    <span style={{ fontSize: 10, color: '#4a5568', marginRight: 2, flexShrink: 0 }}>{t.count}</span>
-                  </button>
-                )
-              })}
-            </div>
-          </Section>
-        )}
+              )
+            })}
+          </div>
+        </Section>
       </div>
 
       {(userEmail || onSignOut) && (

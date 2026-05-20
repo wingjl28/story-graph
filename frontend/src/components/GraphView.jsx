@@ -112,10 +112,10 @@ function buildEdges(edges) {
 
 const POSITIONS_KEY = (graphId) => `sg-positions-${graphId}`
 
-const loadSavedPositions = (graphId) => {
+const loadLocalPositions = (graphId) => {
   try { return JSON.parse(localStorage.getItem(POSITIONS_KEY(graphId)) || '{}') } catch { return {} }
 }
-const savePositions = (graphId, positions) => {
+const saveLocalPositions = (graphId, positions) => {
   try { localStorage.setItem(POSITIONS_KEY(graphId), JSON.stringify(positions)) } catch {}
 }
 
@@ -127,6 +127,7 @@ const GraphView = forwardRef(function GraphView(
     hiddenNodeIds, hiddenEdgeIds,
     onSelectionChange, selectionMode, multiSelectActive,
     onBoxSelectDone, onBoxSelectToggle, graphId,
+    loadPositions, savePositions,
   },
   ref,
 ) {
@@ -145,8 +146,11 @@ const GraphView = forwardRef(function GraphView(
   const selectionModeRef = useRef(selectionMode)
   const onBoxSelectDoneRef = useRef(onBoxSelectDone)
   const onBoxSelectToggleRef = useRef(onBoxSelectToggle)
+  const savePositionsRef = useRef(savePositions)
+  const loadPositionsRef = useRef(loadPositions)
   const boxSelectTimerRef = useRef(null)
   const pendingPositionsRef = useRef(new Map())
+  const saveTimerRef = useRef(null)
 
   useEffect(() => { graphIdRef.current = graphId }, [graphId])
   useEffect(() => { onNodeClickRef.current = onNodeClick }, [onNodeClick])
@@ -159,6 +163,19 @@ const GraphView = forwardRef(function GraphView(
   useEffect(() => { selectionModeRef.current = selectionMode }, [selectionMode])
   useEffect(() => { onBoxSelectDoneRef.current = onBoxSelectDone }, [onBoxSelectDone])
   useEffect(() => { onBoxSelectToggleRef.current = onBoxSelectToggle }, [onBoxSelectToggle])
+  useEffect(() => { savePositionsRef.current = savePositions }, [savePositions])
+  useEffect(() => { loadPositionsRef.current = loadPositions }, [loadPositions])
+
+  const collectAndSave = () => {
+    if (!cy.current) return
+    const positions = {}
+    cy.current.nodes().forEach(n => { const p = n.position(); positions[n.id()] = { x: p.x, y: p.y } })
+    saveLocalPositions(graphIdRef.current, positions)
+    clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => {
+      savePositionsRef.current?.(graphIdRef.current, positions)
+    }, 1000)
+  }
 
   useImperativeHandle(ref, () => ({
     resetGraph: () => cy.current?.elements().remove(),
@@ -192,9 +209,7 @@ const GraphView = forwardRef(function GraphView(
         const step = (maxX - minX) / (sorted.length - 1)
         sorted.forEach((n, i) => n.position({ x: minX + i * step, y: n.position().y }))
       }
-      const positions = {}
-      cy.current.nodes().forEach(n => { const p = n.position(); positions[n.id()] = { x: p.x, y: p.y } })
-      savePositions(graphIdRef.current, positions)
+      collectAndSave()
     },
   }))
 
@@ -264,15 +279,7 @@ const GraphView = forwardRef(function GraphView(
       onBgRightClickRef.current?.(clientX, clientY, graphX, graphY)
     })
 
-    // Save positions on drag end
-    cy.current.on('dragfree', 'node', () => {
-      const positions = {}
-      cy.current.nodes().forEach((n) => {
-        const p = n.position()
-        positions[n.id()] = { x: p.x, y: p.y }
-      })
-      savePositions(graphIdRef.current, positions)
-    })
+    cy.current.on('dragfree', 'node', () => collectAndSave())
 
     // Box-select: debounce select events to read final selection
     cy.current.on('select unselect', 'node', () => {
@@ -287,6 +294,7 @@ const GraphView = forwardRef(function GraphView(
 
     return () => {
       clearTimeout(boxSelectTimerRef.current)
+      clearTimeout(saveTimerRef.current)
       cy.current?.destroy()
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -344,21 +352,49 @@ const GraphView = forwardRef(function GraphView(
     cy.current.add(buildEdges(graphData.edges))
 
     if (isInitialLoad && cy.current.nodes().length > 0) {
-      const saved = loadSavedPositions(graphIdRef.current)
-      const hasSaved = Object.keys(saved).length > 0
-      if (hasSaved) {
-        cy.current.nodes().forEach((n) => {
-          if (saved[n.id()]) n.position(saved[n.id()])
+      const applyPositionsOrLayout = (saved) => {
+        const hasSaved = Object.keys(saved).length > 0
+        if (hasSaved) {
+          cy.current.nodes().forEach((n) => {
+            if (saved[n.id()]) n.position(saved[n.id()])
+          })
+        } else {
+          cy.current.layout(LAYOUT_OPTS).run()
+        }
+        cy.current.fit(undefined, 50)
+        cy.current.resize()
+        cy.current.forceRender()
+        requestAnimationFrame(() => {
+          cy.current?.style().update()
+          cy.current?.forceRender()
         })
-        cy.current.fit(undefined, 50)
-      } else {
-        cy.current.layout(LAYOUT_OPTS).run()
-        cy.current.fit(undefined, 50)
       }
+      const local = loadLocalPositions(graphIdRef.current)
+      if (Object.keys(local).length > 0) {
+        applyPositionsOrLayout(local)
+      }
+      if (loadPositionsRef.current) {
+        loadPositionsRef.current(graphIdRef.current).then(server => {
+          if (server && Object.keys(server).length > 0) {
+            applyPositionsOrLayout(server)
+            saveLocalPositions(graphIdRef.current, server)
+          } else if (Object.keys(local).length === 0) {
+            applyPositionsOrLayout({})
+          }
+        }).catch(() => {
+          if (Object.keys(local).length === 0) applyPositionsOrLayout({})
+        })
+      } else {
+        applyPositionsOrLayout(local)
+      }
+    } else {
+      cy.current.resize()
+      cy.current.forceRender()
+      requestAnimationFrame(() => {
+        cy.current?.style().update()
+        cy.current?.forceRender()
+      })
     }
-
-    cy.current.resize()
-    cy.current.forceRender()
   }, [graphData])
 
   // Sync hidden node classes

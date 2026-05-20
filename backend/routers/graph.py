@@ -10,6 +10,7 @@ from ..db_models import (
     Tag as TagORM,
     Relationship as RelationshipORM,
     RelType as RelTypeORM,
+    StoryNodePosition,
 )
 from ..auth import get_current_uid, assert_story_access
 
@@ -95,3 +96,64 @@ def get_graph(
         )
 
     return {"nodes": cy_nodes, "edges": cy_edges}
+
+
+@router.get("/positions")
+def get_positions(
+    graph_id: int,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
+    assert_story_access(session, graph_id, uid, "viewer")
+    rows = session.execute(
+        select(StoryNodePosition).where(
+            StoryNodePosition.story_graph_id == graph_id,
+            StoryNodePosition.user_id == uid,
+        )
+    ).scalars().all()
+    return {str(r.node_id): {"x": r.x, "y": r.y} for r in rows}
+
+
+@router.put("/positions")
+def save_positions(
+    graph_id: int,
+    positions: dict,
+    session: Session = Depends(get_session),
+    uid: int = Depends(get_current_uid),
+):
+    assert_story_access(session, graph_id, uid, "editor")
+    session.execute(
+        select(StoryNodePosition).where(
+            StoryNodePosition.story_graph_id == graph_id,
+            StoryNodePosition.user_id == uid,
+        )
+    )
+    existing = {
+        r.node_id: r
+        for r in session.execute(
+            select(StoryNodePosition).where(
+                StoryNodePosition.story_graph_id == graph_id,
+                StoryNodePosition.user_id == uid,
+            )
+        ).scalars().all()
+    }
+    for node_id_str, pos in positions.items():
+        nid = int(node_id_str)
+        if nid in existing:
+            existing[nid].x = pos["x"]
+            existing[nid].y = pos["y"]
+        else:
+            session.add(StoryNodePosition(
+                story_graph_id=graph_id,
+                user_id=uid,
+                node_id=nid,
+                x=pos["x"],
+                y=pos["y"],
+            ))
+    # Remove positions for nodes no longer in the request
+    incoming_ids = {int(k) for k in positions}
+    for nid, row in existing.items():
+        if nid not in incoming_ids:
+            session.delete(row)
+    session.commit()
+    return {"ok": True}

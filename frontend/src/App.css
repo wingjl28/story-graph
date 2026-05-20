@@ -1347,6 +1347,7 @@ input[type='color'] {
 .sb-chip:hover { background: #1e2535; border-color: #2d3748; }
 .sb-chip.selected { background: #1e2535; border-color: #6366f1; }
 .sb-chip.hidden { opacity: 0.45; }
+.sb-chip.solo { border-color: #f6ad55; background: #2a2210; }
 .sb-chip-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .sb-chip-eye {
   flex-shrink: 0; font-size: 10px; color: #4a5568; line-height: 1;
@@ -1601,6 +1602,87 @@ input[type='color'] {
   color: #718096;
   font-size: 13px;
 }
+
+/* ── Quick Relationship Bar ──────────────────────────────── */
+.quick-rel-bar {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(26, 31, 46, 0.96);
+  border: 1px solid #4a5568;
+  border-radius: 10px;
+  padding: 10px 16px;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 320px;
+  max-width: 600px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+.quick-rel-steps {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 11px;
+  color: #4a5568;
+  white-space: nowrap;
+  padding-top: 2px;
+}
+.quick-rel-step { padding: 2px 6px; border-radius: 4px; }
+.quick-rel-step.active { background: #6366f1; color: #fff; }
+.quick-rel-arrow { color: #2d3748; }
+.quick-rel-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.quick-rel-hint { font-size: 12px; color: #718096; }
+.quick-rel-from-summary {
+  font-size: 12px;
+  color: #a0aec0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quick-rel-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.quick-rel-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #2d3748;
+  border-radius: 12px;
+  padding: 2px 8px 2px 4px;
+  font-size: 11px;
+  color: #e2e8f0;
+}
+.quick-rel-chip button {
+  background: none;
+  border: none;
+  color: #718096;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  margin-left: 2px;
+}
+.quick-rel-chip button:hover { color: #fc8181; }
+.quick-rel-close {
+  background: none;
+  border: none;
+  color: #4a5568;
+  cursor: pointer;
+  padding: 2px;
+  flex-shrink: 0;
+}
+.quick-rel-close:hover { color: #e2e8f0; }
 
 /* ── Sidebar user footer ─────────────────────────────────── */
 .sidebar-user-footer {
