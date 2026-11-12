@@ -65,8 +65,8 @@ export const api = {
   toggleBidirectional: (id) => post(`/relationships/${id}/toggle-bidirectional`, {}),
 
   // Relationship Types
-  getRelTypes: () => get('/rel-types'),
-  updateRelType: (label, data) => put(`/rel-types/${encodeURIComponent(label)}`, data),
+  getRelTypes: (graphId) => get(`/rel-types?graph_id=${graphId}`),
+  updateRelType: (label, graphId, data) => put(`/rel-types/${encodeURIComponent(label)}?graph_id=${graphId}`, data),
 
   // Tags
   getTags: (graphId) => graphId != null ? get(`/tags?graph_id=${graphId}`) : get('/tags'),

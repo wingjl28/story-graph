@@ -71,6 +71,17 @@ export default function ShareDialog({ graphId, onClose }) {
     }
   }
 
+  useEffect(() => {
+    const handler = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== 'Enter') return
+      if (!inviteEmail.trim() || inviting) return
+      e.preventDefault()
+      handleInvite(e)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [inviteEmail, inviting]) // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal share-dialog">

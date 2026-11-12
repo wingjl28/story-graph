@@ -105,6 +105,18 @@ function TagForm({ initial, onSave, onCancel, activeGraphId }) {
     }
     catch (err) { setError(err.message); setSaving(false) }
   }
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== 'Enter') return
+      if (!name.trim() || saving) return
+      e.preventDefault()
+      handleSubmit(e)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [name, saving]) // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="type-form">
       <div className="type-form-title">{initial ? `Editing: ${initial.name}` : 'New Tag'}</div>

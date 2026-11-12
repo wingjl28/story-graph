@@ -173,6 +173,21 @@ export default function AddNodeModal({
     }
   }
 
+  useEffect(() => {
+    const handler = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== 'Enter') return
+      if (!name.trim() || !typeId || saving) return
+      e.preventDefault()
+      if (e.shiftKey && !isEditing) {
+        doSave(true)
+      } else {
+        doSave(false)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [name, typeId, saving, isEditing]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const otherNodes = (nodes || []).filter(n => !isEditing || String(n.id) !== String(initialData?.id))
   const modalStyle = pos
     ? { position: 'fixed', top: pos.y, left: pos.x, transform: 'none' }

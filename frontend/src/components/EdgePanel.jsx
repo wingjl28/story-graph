@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Icon } from '@iconify/react'
 import { api } from '../api'
 
@@ -18,6 +18,8 @@ export default function EdgePanel({ edgeData, onDelete, onClose, onSaved, existi
   }
   const [label, setLabel] = useState(edgeData.label)
   const [notes, setNotes] = useState(edgeData.notes || '')
+  const [startDate, setStartDate] = useState(edgeData.start_date || '')
+  const [endDate, setEndDate] = useState(edgeData.end_date || '')
   const [kvPairs, setKvPairs] = useState(
     Object.entries(edgeData.metadata || {}).map(([k, v]) => ({ k, v: String(v) })),
   )
@@ -68,6 +70,8 @@ export default function EdgePanel({ edgeData, onDelete, onClose, onSaved, existi
         label: label.trim(),
         notes: notes.trim() || null,
         metadata,
+        start_date: startDate.trim() || null,
+        end_date: endDate.trim() || null,
       })
       setEditing(false)
       onSaved?.()
@@ -78,10 +82,24 @@ export default function EdgePanel({ edgeData, onDelete, onClose, onSaved, existi
     }
   }
 
+  useEffect(() => {
+    if (!editing) return
+    const handler = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== 'Enter') return
+      if (!label.trim() || saving) return
+      e.preventDefault()
+      handleSave()
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [editing, label, saving]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const cancelEdit = () => {
     setEditing(false)
     setLabel(edgeData.label)
     setNotes(edgeData.notes || '')
+    setStartDate(edgeData.start_date || '')
+    setEndDate(edgeData.end_date || '')
     setKvPairs(Object.entries(edgeData.metadata || {}).map(([k, v]) => ({ k, v: String(v) })))
     setError(null)
   }
@@ -137,6 +155,15 @@ export default function EdgePanel({ edgeData, onDelete, onClose, onSaved, existi
 
         {!editing ? (
           <>
+            {(edgeData.start_date || edgeData.end_date) && (
+              <div>
+                <div className="panel-section-label">When</div>
+                <div className="panel-section-value" style={{ color: '#a78bfa' }}>
+                  {edgeData.start_date || '?'}
+                  {edgeData.end_date ? ` → ${edgeData.end_date}` : ''}
+                </div>
+              </div>
+            )}
             {edgeData.notes && (
               <div>
                 <div className="panel-section-label">Notes</div>
@@ -169,6 +196,25 @@ export default function EdgePanel({ edgeData, onDelete, onClose, onSaved, existi
               <datalist id="edge-label-suggestions">
                 {(existingLabels || []).map((l) => <option key={l} value={l} />)}
               </datalist>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Dates (optional)</label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  className="form-input"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  placeholder="Start"
+                  style={{ flex: 1 }}
+                />
+                <input
+                  className="form-input"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  placeholder="End"
+                  style={{ flex: 1 }}
+                />
+              </div>
             </div>
             <div className="form-group">
               <label className="form-label">Notes</label>

@@ -91,6 +91,8 @@ def get_graph(
                     "notes": r.notes,
                     "rel_id": r.id,
                     "metadata": r.meta,  # ORM attr is meta; JSON key is metadata
+                    "start_date": r.start_date,
+                    "end_date": r.end_date,
                 }
             }
         )

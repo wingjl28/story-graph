@@ -74,6 +74,8 @@ def _orm_to_rel(session: Session, rel: RelationshipORM) -> dict:
         "rel_color": rel_color,
         "notes": rel.notes,
         "metadata": rel.meta,  # ORM attr is meta; JSON key is metadata
+        "start_date": rel.start_date,
+        "end_date": rel.end_date,
         "created_at": rel.created_at,
     }
 
@@ -162,6 +164,8 @@ def create_relationship(
             label=label,
             notes=data.notes,
             meta=data.metadata,
+            start_date=data.start_date,
+            end_date=data.end_date,
         )
         session.add(rel)
         session.commit()

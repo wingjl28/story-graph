@@ -127,12 +127,16 @@ class RelationshipCreate(BaseModel):
     label: str
     notes: Optional[str] = None
     metadata: Dict[str, Any] = {}
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
 
 
 class RelationshipUpdate(BaseModel):
     label: Optional[str] = None
     notes: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
 
 
 # ── Collaboration / invite schemas (Phase 2) ──────────────────────────────
@@ -184,4 +188,6 @@ class Relationship(BaseModel):
     rel_color: str
     notes: Optional[str]
     metadata: Dict[str, Any]
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
     created_at: datetime

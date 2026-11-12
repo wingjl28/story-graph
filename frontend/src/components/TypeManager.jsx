@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
 import { api } from '../api'
 
@@ -143,6 +143,17 @@ function TypeForm({ initial, onSave, onCancel, activeGraphId }) {
       setSaving(false)
     }
   }
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== 'Enter') return
+      if (!name.trim() || saving) return
+      e.preventDefault()
+      handleSubmit(e)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [name, saving]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="type-form">

@@ -86,6 +86,28 @@ const CY_STYLE = [
     selector: '.sg-hidden',
     style: { display: 'none' },
   },
+  {
+    selector: 'node.qr-from',
+    style: {
+      'border-color': '#34d399',
+      'border-width': 4,
+      'border-opacity': 1,
+      'overlay-color': '#34d399',
+      'overlay-opacity': 0.12,
+      'z-index': 25,
+    },
+  },
+  {
+    selector: 'node.qr-to',
+    style: {
+      'border-color': '#f59e0b',
+      'border-width': 4,
+      'border-opacity': 1,
+      'overlay-color': '#f59e0b',
+      'overlay-opacity': 0.12,
+      'z-index': 25,
+    },
+  },
 ]
 
 // Collapse A→B + B→A pairs (same label) into one bidirectional edge
@@ -127,6 +149,7 @@ const GraphView = forwardRef(function GraphView(
     hiddenNodeIds, hiddenEdgeIds,
     onSelectionChange, selectionMode, multiSelectActive,
     onBoxSelectDone, onBoxSelectToggle, graphId,
+    quickRelFromIds, quickRelToIds,
     loadPositions, savePositions,
   },
   ref,
@@ -352,6 +375,7 @@ const GraphView = forwardRef(function GraphView(
     cy.current.add(buildEdges(graphData.edges))
 
     if (isInitialLoad && cy.current.nodes().length > 0) {
+      const edgeSnapshot = buildEdges(graphData.edges)
       const applyPositionsOrLayout = (saved) => {
         const hasSaved = Object.keys(saved).length > 0
         if (hasSaved) {
@@ -361,9 +385,10 @@ const GraphView = forwardRef(function GraphView(
         } else {
           cy.current.layout(LAYOUT_OPTS).run()
         }
+        cy.current.edges().remove()
+        cy.current.add(edgeSnapshot)
         cy.current.fit(undefined, 50)
         cy.current.resize()
-        cy.current.forceRender()
         requestAnimationFrame(() => {
           cy.current?.style().update()
           cy.current?.forceRender()
@@ -389,7 +414,6 @@ const GraphView = forwardRef(function GraphView(
       }
     } else {
       cy.current.resize()
-      cy.current.forceRender()
       requestAnimationFrame(() => {
         cy.current?.style().update()
         cy.current?.forceRender()
@@ -414,6 +438,20 @@ const GraphView = forwardRef(function GraphView(
       else e.removeClass('sg-hidden')
     })
   }, [hiddenEdgeIds, graphData])
+
+  // Sync Quick-Rel From/To highlighting classes
+  useEffect(() => {
+    if (!cy.current) return
+    const fromSet = new Set((quickRelFromIds || []).map(String))
+    const toSet = new Set((quickRelToIds || []).map(String))
+    cy.current.nodes().forEach((n) => {
+      const id = n.id()
+      if (fromSet.has(id)) n.addClass('qr-from')
+      else n.removeClass('qr-from')
+      if (toSet.has(id)) n.addClass('qr-to')
+      else n.removeClass('qr-to')
+    })
+  }, [quickRelFromIds, quickRelToIds, graphData])
 
   // Sync selection highlight (suppressed when multi-select is active)
   useEffect(() => {

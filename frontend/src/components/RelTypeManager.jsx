@@ -2,16 +2,16 @@ import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
 import { api } from '../api'
 
-export default function RelTypeManager({ onClose, embedded = false, onUpdate }) {
+export default function RelTypeManager({ onClose, embedded = false, onUpdate, activeGraphId }) {
   const [relTypes, setRelTypes] = useState([])
 
   useEffect(() => {
-    api.getRelTypes().then(setRelTypes).catch(() => {})
-  }, [])
+    if (activeGraphId != null) api.getRelTypes(activeGraphId).then(setRelTypes).catch(() => {})
+  }, [activeGraphId])
 
   const handleColorChange = async (label, color) => {
     try {
-      const updated = await api.updateRelType(label, { color })
+      const updated = await api.updateRelType(label, activeGraphId, { color })
       setRelTypes((prev) => prev.map((rt) => rt.label === label ? updated : rt))
       onUpdate?.()
     } catch (e) {

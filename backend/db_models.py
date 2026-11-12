@@ -228,6 +228,8 @@ class Relationship(Base):
     meta: Mapped[dict] = mapped_column(
         "metadata", JSONB, nullable=False, server_default="'{}'::jsonb"
     )
+    start_date: Mapped[str | None] = mapped_column(Text, nullable=True)
+    end_date: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[object] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )

@@ -1,3 +1,5 @@
+import { useState, useMemo } from 'react'
+
 function parseDateOrder(dateStr) {
   if (!dateStr) return Infinity
   const real = new Date(dateStr)
@@ -7,50 +9,123 @@ function parseDateOrder(dateStr) {
   return Infinity
 }
 
-export default function Timeline({ graphData, onClose }) {
+export default function Timeline({ graphData, onClose, focusNodeIds }) {
+  const [scope, setScope] = useState(
+    focusNodeIds && focusNodeIds.length > 0 ? 'selected' : 'all',
+  )
+
   const nodes = graphData.nodes.map((n) => n.data)
   const edges = graphData.edges.map((e) => e.data)
 
   const nodeById = Object.fromEntries(nodes.map((n) => [String(n.id), n]))
 
-  // Build edge index keyed by node id (string)
-  const edgesByNode = {}
-  edges.forEach((e) => {
-    const s = String(e.source), t = String(e.target)
-    if (!edgesByNode[s]) edgesByNode[s] = []
-    if (!edgesByNode[t]) edgesByNode[t] = []
-    edgesByNode[s].push(e)
-    edgesByNode[t].push(e)
-  })
+  const edgesByNode = useMemo(() => {
+    const map = {}
+    edges.forEach((e) => {
+      const s = String(e.source), t = String(e.target)
+      if (!map[s]) map[s] = []
+      if (!map[t]) map[t] = []
+      map[s].push(e)
+      map[t].push(e)
+    })
+    return map
+  }, [edges])
 
-  const dateNodes = nodes
-    .filter((n) => n.is_date_type && n.date)
-    .sort((a, b) => parseDateOrder(a.date) - parseDateOrder(b.date))
+  const focusSet = useMemo(
+    () => new Set((focusNodeIds || []).map(String)),
+    [focusNodeIds],
+  )
 
-  const undatedDateNodes = nodes.filter((n) => n.is_date_type && !n.date)
+  // When scope==='selected', restrict to focus nodes and their neighbors only.
+  const visibleNodeIds = useMemo(() => {
+    if (scope !== 'selected' || focusSet.size === 0) return null
+    const ids = new Set(focusSet)
+    edges.forEach((e) => {
+      const s = String(e.source), t = String(e.target)
+      if (focusSet.has(s)) ids.add(t)
+      if (focusSet.has(t)) ids.add(s)
+    })
+    return ids
+  }, [scope, focusSet, edges])
+
+  const dateNodes = useMemo(() => {
+    const arr = nodes.filter((n) => n.is_date_type && n.date)
+    if (visibleNodeIds) return arr.filter((n) => visibleNodeIds.has(String(n.id)))
+    return arr
+  }, [nodes, visibleNodeIds])
+
+  const sortedDateNodes = useMemo(
+    () => [...dateNodes].sort((a, b) => parseDateOrder(a.date) - parseDateOrder(b.date)),
+    [dateNodes],
+  )
+
+  const undatedDateNodes = useMemo(() => {
+    const arr = nodes.filter((n) => n.is_date_type && !n.date)
+    if (visibleNodeIds) return arr.filter((n) => visibleNodeIds.has(String(n.id)))
+    return arr
+  }, [nodes, visibleNodeIds])
+
+  // Relationships with any date set.
+  const datedEdges = useMemo(() => {
+    const arr = edges.filter((e) => e.start_date || e.end_date)
+    let filtered = arr
+    if (visibleNodeIds) {
+      filtered = arr.filter(
+        (e) => visibleNodeIds.has(String(e.source)) || visibleNodeIds.has(String(e.target)),
+      )
+    }
+    return [...filtered].sort(
+      (a, b) =>
+        parseDateOrder(a.start_date || a.end_date) -
+        parseDateOrder(b.start_date || b.end_date),
+    )
+  }, [edges, visibleNodeIds])
+
+  const hasSelection = focusSet.size > 0
+  const noResults = sortedDateNodes.length === 0 && datedEdges.length === 0
 
   return (
     <div className="timeline-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="timeline-panel">
         <div className="timeline-header">
           <span className="timeline-title">Timeline</span>
-          <span style={{ fontSize: 12, color: '#4a5568' }}>{dateNodes.length} dated event{dateNodes.length !== 1 ? 's' : ''}</span>
+          <span style={{ fontSize: 12, color: '#4a5568' }}>
+            {sortedDateNodes.length} event{sortedDateNodes.length !== 1 ? 's' : ''}
+            {datedEdges.length > 0 && ` · ${datedEdges.length} rel${datedEdges.length !== 1 ? 's' : ''}`}
+          </span>
+          {hasSelection && (
+            <div className="timeline-scope">
+              <button
+                className={`tl-scope-btn${scope === 'all' ? ' active' : ''}`}
+                onClick={() => setScope('all')}
+              >
+                All
+              </button>
+              <button
+                className={`tl-scope-btn${scope === 'selected' ? ' active' : ''}`}
+                onClick={() => setScope('selected')}
+              >
+                Selected ({focusSet.size})
+              </button>
+            </div>
+          )}
           <button className="panel-close" onClick={onClose}>×</button>
         </div>
 
-        {dateNodes.length === 0 ? (
+        {noResults ? (
           <div className="timeline-empty">
             <div style={{ fontSize: 32, marginBottom: 12 }}>📅</div>
             <div>No dated events yet.</div>
             <div style={{ fontSize: 12, marginTop: 6 }}>
               Mark a node type as a <strong>Date Type</strong> in Manage Types,
-              then set dates on nodes of that type.
+              then set dates on nodes of that type — or add start/end dates to
+              relationships.
             </div>
           </div>
         ) : (
           <div className="timeline-scroll">
             <div className="tl-events">
-              {dateNodes.map((node) => {
+              {sortedDateNodes.map((node) => {
                 const nodeEdges = edgesByNode[String(node.id)] || []
                 const connections = nodeEdges
                   .map((e) => {
@@ -94,6 +169,37 @@ export default function Timeline({ graphData, onClose }) {
               })}
             </div>
             <div className="tl-axis" />
+          </div>
+        )}
+
+        {datedEdges.length > 0 && (
+          <div className="timeline-rels">
+            <div style={{ color: '#4a5568', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+              Dated Relationships
+            </div>
+            <div className="tl-rel-list">
+              {datedEdges.map((e) => {
+                const src = nodeById[String(e.source)]
+                const tgt = nodeById[String(e.target)]
+                const dateRange = e.start_date && e.end_date
+                  ? `${e.start_date} → ${e.end_date}`
+                  : (e.start_date || `→ ${e.end_date}`)
+                return (
+                  <div key={e.rel_id} className="tl-rel-row">
+                    <span className="tl-rel-date">{dateRange}</span>
+                    <span className="tl-rel-from" style={{ color: src?.color }}>
+                      {src?.label || '?'}
+                    </span>
+                    <span className="tl-rel-label" style={{ color: e.color || '#a78bfa' }}>
+                      —[{e.label}]→
+                    </span>
+                    <span className="tl-rel-to" style={{ color: tgt?.color }}>
+                      {tgt?.label || '?'}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )}
 

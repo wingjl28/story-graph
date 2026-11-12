@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { Icon } from '@iconify/react'
 import { api } from '../api'
 
@@ -13,6 +13,8 @@ export default function AddRelationshipModal({ nodes, sourceId, sourceIds, exist
   const [notes, setNotes] = useState('')
   const [kvPairs, setKvPairs] = useState([])
   const [bidirectional, setBidirectional] = useState(false)
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [sourceSearch, setSourceSearch] = useState('')
@@ -106,6 +108,8 @@ export default function AddRelationshipModal({ nodes, sourceId, sourceIds, exist
     setLabel('')
     setNotes('')
     setKvPairs([])
+    setStartDate('')
+    setEndDate('')
     setTargets([])
     setTargetSearch('')
     setTargetTypeFilter(new Set())
@@ -146,6 +150,8 @@ export default function AddRelationshipModal({ nodes, sourceId, sourceIds, exist
             label: label.trim(),
             notes: notes.trim() || null,
             metadata,
+            start_date: startDate.trim() || null,
+            end_date: endDate.trim() || null,
           })
           created++
         } catch (err) {
@@ -167,6 +173,21 @@ export default function AddRelationshipModal({ nodes, sourceId, sourceIds, exist
   }
 
   const canSave = sources.length > 0 && targets.length > 0 && label.trim()
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== 'Enter') return
+      if (!canSave || saving) return
+      e.preventDefault()
+      if (e.shiftKey) {
+        doSave(true)
+      } else {
+        doSave(false)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [canSave, saving]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const modalStyle = pos
     ? { position: 'fixed', top: pos.y, left: pos.x, transform: 'none' }
@@ -261,6 +282,27 @@ export default function AddRelationshipModal({ nodes, sourceId, sourceIds, exist
                 onSort={setTargetSort}
                 placeholder="Search and add target nodes…"
               />
+            </div>
+
+            {/* Optional dates */}
+            <div className="form-group">
+              <label className="form-label">Dates (optional)</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  className="form-input"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  placeholder="Start (e.g. 1995, Year 342…)"
+                  style={{ flex: 1 }}
+                />
+                <input
+                  className="form-input"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  placeholder="End (optional)"
+                  style={{ flex: 1 }}
+                />
+              </div>
             </div>
 
             {/* Notes */}
